@@ -21,6 +21,19 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: notemind
+          POSTGRES_PASSWORD: ci-only-password  # pragma: allowlist secret
+          POSTGRES_DB: notemind
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U notemind" --health-interval 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://notemind:ci-only-password@127.0.0.1:5432/notemind  # pragma: allowlist secret
+      SECRET_KEY: ci-only-secret-key-not-used-anywhere-else-0123456789  # pragma: allowlist secret
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -28,6 +41,12 @@ jobs:
         run: uv sync --frozen
       - name: Lint
         run: uv run ruff check . && uv run ruff format --check .
+      - name: Migrations apply, roll back, and match the models
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+          uv run alembic check
       - name: Tests
         run: uv run pytest -q
       - name: Static security scan (fail on high severity)

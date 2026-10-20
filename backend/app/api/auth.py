@@ -1,0 +1,169 @@
+import uuid
+from datetime import UTC, datetime
+from typing import Annotated
+
+from fastapi import APIRouter, Cookie, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.deps import ACCESS_COOKIE, REFRESH_COOKIE, RedisDep, SessionDep
+from app.models import RefreshToken, User
+from app.rate_limit import client_ip, enforce_rate_limit
+from app.schemas import LoginIn, SignupIn, UserOut
+from app.security.passwords import DUMMY_HASH, hash_password, needs_rehash, verify_password
+from app.security.tokens import (
+    ACCESS_TOKEN_TTL,
+    REFRESH_TOKEN_TTL,
+    create_access_token,
+    hash_token,
+    new_opaque_token,
+)
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Refresh cookie is only sent to /auth/*, so it never travels with ordinary API calls.
+_REFRESH_PATH = "/auth"
+_INVALID_LOGIN = "Invalid email or password"
+
+
+def set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    common = {"httponly": True, "secure": True, "samesite": "strict"}
+    response.set_cookie(
+        ACCESS_COOKIE,
+        access_token,
+        max_age=int(ACCESS_TOKEN_TTL.total_seconds()),
+        path="/",
+        **common,
+    )
+    response.set_cookie(
+        REFRESH_COOKIE,
+        refresh_token,
+        max_age=int(REFRESH_TOKEN_TTL.total_seconds()),
+        path=_REFRESH_PATH,
+        **common,
+    )
+
+
+def clear_auth_cookies(response: Response) -> None:
+    common = {"httponly": True, "secure": True, "samesite": "strict"}
+    response.delete_cookie(ACCESS_COOKIE, path="/", **common)
+    response.delete_cookie(REFRESH_COOKIE, path=_REFRESH_PATH, **common)
+
+
+def _unauthorized() -> JSONResponse:
+    response = JSONResponse({"detail": "Not authenticated"}, status_code=401)
+    clear_auth_cookies(response)
+    return response
+
+
+def _start_session(
+    session: Session, response: Response, user: User, family_id: uuid.UUID | None = None
+) -> None:
+    refresh_token = new_opaque_token()
+    session.add(
+        RefreshToken(
+            user_id=user.id,
+            family_id=family_id or uuid.uuid4(),
+            token_hash=hash_token(refresh_token),
+            expires_at=datetime.now(UTC) + REFRESH_TOKEN_TTL,
+        )
+    )
+    session.commit()
+    set_auth_cookies(response, create_access_token(user.id), refresh_token)
+
+
+def _revoke_family(session: Session, family_id: uuid.UUID) -> None:
+    session.execute(
+        update(RefreshToken)
+        .where(RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=datetime.now(UTC))
+    )
+    session.commit()
+
+
+@router.post("/signup", status_code=status.HTTP_201_CREATED, response_model=UserOut)
+def signup(
+    body: SignupIn, request: Request, response: Response, session: SessionDep, redis: RedisDep
+) -> User:
+    # Generous per-IP limit: a whole college hostel can share one public IP.
+    enforce_rate_limit(redis, "signup", client_ip(request), limit=20, window_seconds=3600)
+    # TODO(email verification): once added, always return 202 "check your inbox" so signup
+    # can't be used to discover which emails are registered.
+    user = User(email=body.email.lower(), password_hash=hash_password(body.password))
+    session.add(user)
+    try:
+        session.flush()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists",
+        ) from None
+    _start_session(session, response, user)
+    return user
+
+
+@router.post("/login", response_model=UserOut)
+def login(
+    body: LoginIn, request: Request, response: Response, session: SessionDep, redis: RedisDep
+) -> User:
+    email = body.email.lower()
+    ip = client_ip(request)
+    enforce_rate_limit(redis, "login", f"{ip}:{email}", limit=5, window_seconds=60)
+    enforce_rate_limit(redis, "login-ip", ip, limit=50, window_seconds=60)
+
+    user = session.scalar(select(User).where(User.email == email))
+    if user is None:
+        verify_password(DUMMY_HASH, body.password)  # same timing as a real check
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_INVALID_LOGIN)
+    if not verify_password(user.password_hash, body.password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_INVALID_LOGIN)
+    if needs_rehash(user.password_hash):
+        user.password_hash = hash_password(body.password)
+
+    _start_session(session, response, user)
+    return user
+
+
+@router.post("/refresh", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+def refresh(
+    response: Response,
+    session: SessionDep,
+    refresh_token: Annotated[str | None, Cookie()] = None,
+) -> JSONResponse | None:
+    if not refresh_token:
+        return _unauthorized()
+    record = session.scalar(
+        select(RefreshToken).where(RefreshToken.token_hash == hash_token(refresh_token))
+    )
+    now = datetime.now(UTC)
+    if record is None or record.revoked_at is not None or record.expires_at <= now:
+        return _unauthorized()
+    if record.used_at is not None:
+        # A rotated-out token came back: someone kept a copy. Kill every session in the family.
+        _revoke_family(session, record.family_id)
+        return _unauthorized()
+
+    record.used_at = now
+    user = session.get(User, record.user_id)
+    if user is None:
+        return _unauthorized()
+    _start_session(session, response, user, family_id=record.family_id)
+    return None
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(
+    response: Response,
+    session: SessionDep,
+    refresh_token: Annotated[str | None, Cookie()] = None,
+) -> None:
+    if refresh_token:
+        record = session.scalar(
+            select(RefreshToken).where(RefreshToken.token_hash == hash_token(refresh_token))
+        )
+        if record is not None:
+            _revoke_family(session, record.family_id)
+    clear_auth_cookies(response)

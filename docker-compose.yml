@@ -26,12 +26,17 @@ services:
 
   backend:
     build: ./backend
+    # Dev convenience: apply migrations on start. In production this is a separate release step.
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /data/uploads
     ports:
       - "127.0.0.1:8000:8000"
+    volumes:
+      - uploads:/data/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,10 +46,15 @@ services:
   worker:
     build: ./backend
     command: ["python", "-m", "app.worker"]
+    # Parses untrusted files: cap memory so a malicious document can't starve the host.
+    mem_limit: 2g
+    volumes:
+      - uploads:/data/uploads
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /data/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,3 +63,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:

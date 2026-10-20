@@ -11,7 +11,8 @@ COPY alembic.ini ./
 
 # --- runtime stage: no build tools, non-root user ---
 FROM python:3.12-slim
-RUN useradd --create-home --uid 1000 app
+RUN useradd --create-home --uid 1000 app \
+    && mkdir -p /data/uploads && chown app:app /data/uploads
 WORKDIR /app
 COPY --from=builder --chown=app:app /app /app
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1

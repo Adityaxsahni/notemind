@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import SecretStr, model_validator
@@ -16,10 +17,15 @@ class Settings(BaseSettings):
     environment: Literal["local", "test", "staging", "production"] = "local"
     secret_key: SecretStr = SecretStr(_DEV_SECRET)
     database_url: str = (
-        "postgresql+psycopg://notemind:notemind@localhost:5432/notemind"  # pragma: allowlist secret
+        "postgresql+psycopg://notemind:notemind@127.0.0.1:5432/notemind"  # pragma: allowlist secret
     )
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = "redis://127.0.0.1:6379/0"
     cors_origins: list[str] = ["http://localhost:3000"]
+
+    upload_dir: Path = Path("data/uploads")
+    max_upload_bytes: int = 20 * 1024 * 1024
+    user_storage_quota_bytes: int = 200 * 1024 * 1024
+    max_documents_per_collection: int = 200
 
     @model_validator(mode="after")
     def _require_real_secret_outside_local(self) -> "Settings":

@@ -1,0 +1,97 @@
+import uuid
+from datetime import datetime
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, model_validator
+
+from app.models import DocumentKind, DocumentStatus, Role
+from app.security.passwords import password_problem
+
+
+class SignupIn(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=10, max_length=128)
+
+    @model_validator(mode="after")
+    def _strong_password(self) -> "SignupIn":
+        problem = password_problem(self.password, str(self.email))
+        if problem:
+            raise ValueError(problem)
+        return self
+
+
+class LoginIn(BaseModel):
+    email: EmailStr
+    # No minimum here: login must not reveal the password policy. Max bounds hashing cost.
+    password: str = Field(max_length=128)
+
+
+class PasswordConfirmIn(BaseModel):
+    password: str = Field(max_length=128)
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    email: str
+    created_at: datetime
+
+
+CollectionName = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
+]
+
+
+class CollectionIn(BaseModel):
+    name: CollectionName
+
+
+class CollectionOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    role: Role
+    created_at: datetime
+
+
+class MemberOut(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    role: Role
+    joined_at: datetime
+
+
+class InviteCreateIn(BaseModel):
+    expires_in_days: int = Field(default=7, ge=1, le=30)
+
+
+class InviteCreatedOut(BaseModel):
+    id: uuid.UUID
+    token: str  # shown exactly once; only its hash is stored
+    expires_at: datetime
+
+
+class InviteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    expires_at: datetime
+    created_at: datetime
+
+
+class DocumentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    filename: str
+    kind: DocumentKind
+    size_bytes: int
+    status: DocumentStatus
+    progress: int
+    page_count: int | None
+    error: str | None
+    created_at: datetime
+
+
+class InviteAcceptIn(BaseModel):
+    token: str = Field(min_length=1, max_length=128)

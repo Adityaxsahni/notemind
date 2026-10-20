@@ -21,5 +21,7 @@ repos:
     rev: v1.5.0
     hooks:
       - id: detect-secrets
-        args: ["--baseline", ".secrets.baseline"]
+        # Alembic revision IDs are random hex, not secrets. Skip only those lines so the rest
+        # of every migration is still scanned.
+        args: ["--baseline", ".secrets.baseline", "--exclude-lines", "^(down_)?revision: str"]
         exclude: (uv\.lock|package-lock\.json)$

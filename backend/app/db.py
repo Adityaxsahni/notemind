@@ -21,9 +21,14 @@ def _session_factory() -> sessionmaker[Session]:
     return sessionmaker(bind=get_engine(), expire_on_commit=False)
 
 
+def new_session() -> Session:
+    """A session for code outside a request (background jobs). Caller must close it."""
+    return _session_factory()()
+
+
 def get_session() -> Iterator[Session]:
     """FastAPI dependency: one session per request, always closed."""
-    session = _session_factory()()
+    session = new_session()
     try:
         yield session
     finally:

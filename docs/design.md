@@ -119,6 +119,10 @@ links, admin/ops access, third-party LLM API.
 | LLM access | **Provider-agnostic gateway**; cheap model for quizzes/simple Qs, stronger for hard Qs | Direct SDK calls everywhere | Single place for budgets, timeouts, retries, logging and swapping providers |
 | Background jobs | **RQ + Redis** | Celery, FastAPI BackgroundTasks | Simpler than Celery; durable unlike BackgroundTasks; Redis already needed |
 | Auth | **Own JWT + rotating refresh cookies** | Auth0/Clerk | Learning value and interview depth; revisit managed auth if it becomes a burden |
+| Upload transport | **Raw request body streamed to disk**, size counted per chunk | Multipart form (`UploadFile`) | Multipart is fully parsed before the handler runs, so a 10 GB upload would hit disk before any size check. Streaming lets us abort at the limit |
+| Where files are parsed | **Only in the worker** (timeout, 2 GB rlimit, container mem cap). API checks magic bytes + ZIP directory only | Parse in the API | A malicious file that crashes or bloats the parser takes down one job, not the API serving everyone |
+| PDF library | **PyMuPDF** | pypdf, pdfplumber | Much faster and better text order. AGPL-licensed: fine while this repo is public; revisit (pypdf) if it goes closed-source |
+| Scanned PDFs | **Rejected with a clear "needs OCR" message** (for now) | Tesseract OCR in worker | Keeps the worker image small for the MVP; OCR is a Later item |
 
 ## 8. Open questions
 - Which LLM provider/plan guarantees no training on API data at our budget?

@@ -1,7 +1,9 @@
 from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from app.api import health
+from app.api import auth, collections, documents, health, invites, me
 from app.config import get_settings
 
 SECURITY_HEADERS = {
@@ -39,7 +41,15 @@ def create_app() -> FastAPI:
             response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
         return response
 
-    app.include_router(health.router)
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(request: Request, exc: RequestValidationError):
+        # FastAPI's default 422 body echoes the submitted value ("input"), which would send
+        # passwords and tokens back into responses and logs. Return location + message only.
+        errors = [{"loc": e["loc"], "msg": e["msg"], "type": e["type"]} for e in exc.errors()]
+        return JSONResponse(status_code=422, content={"detail": errors})
+
+    for module in (health, auth, me, collections, documents, invites):
+        app.include_router(module.router)
     return app
 
 
