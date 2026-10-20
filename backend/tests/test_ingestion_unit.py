@@ -175,3 +175,10 @@ def test_removes_repeated_headers_footers_and_page_numbers():
 def test_does_not_strip_repeated_lines_on_short_documents():
     pages = [Page(1, "Header\nA"), Page(2, "Header\nB")]
     assert [p.text for p in clean_pages(pages)] == ["Header\nA", "Header\nB"]
+
+
+def test_pdf_layout_model_is_not_loaded():
+    # pymupdf 2.0 would load an ONNX model into every parsing job; see pyproject overrides.
+    import pymupdf
+
+    assert pymupdf._get_layout is None

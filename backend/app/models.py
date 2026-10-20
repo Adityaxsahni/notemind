@@ -1,8 +1,22 @@
 import enum
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, String, Text, UniqueConstraint, func
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    BigInteger,
+    Computed,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -132,6 +146,53 @@ class DocumentPage(Base):
     )
     page_number: Mapped[int] = mapped_column(primary_key=True)
     text: Mapped[str] = mapped_column(Text)
+
+
+EMBEDDING_DIM = 384  # bge-small-en-v1.5; a different model needs a migration and a re-index
+
+
+class Chunk(Base):
+    """A retrievable passage of one page, with its embedding and full-text index.
+
+    user_id is the collection owner's id, copied here so every search can filter on
+    (user_id, collection_id) inside the SQL query itself (CLAUDE.md rule 1).
+    """
+
+    __tablename__ = "chunks"
+    __table_args__ = (
+        UniqueConstraint("document_id", "position"),
+        Index("ix_chunks_user_id_collection_id", "user_id", "collection_id"),
+        Index(
+            "ix_chunks_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_with={"m": 16, "ef_construction": 64},
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+        Index("ix_chunks_tsv", "tsv", postgresql_using="gin"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    collection_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("collections.id", ondelete="CASCADE")
+    )
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
+    position: Mapped[int]  # reading order within the document
+    page: Mapped[int]
+    heading: Mapped[str | None] = mapped_column(String(300))
+    text: Mapped[str] = mapped_column(Text)
+    token_count: Mapped[int]
+    embedding: Mapped[Sequence[float]] = mapped_column(Vector(EMBEDDING_DIM))
+    # Headings weigh more than body text in keyword ranking (ts_rank uses A > B).
+    tsv: Mapped[str] = mapped_column(
+        TSVECTOR,
+        Computed(
+            "setweight(to_tsvector('english', coalesce(heading, '')), 'A') || "
+            "setweight(to_tsvector('english', text), 'B')",
+            persisted=True,
+        ),
+    )
 
 
 class InviteLink(Base):

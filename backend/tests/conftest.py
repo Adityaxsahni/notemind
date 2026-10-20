@@ -13,10 +13,11 @@ from app import models  # noqa: E402, F401
 from app.config import get_settings  # noqa: E402
 from app.db import Base, get_session  # noqa: E402
 from app.ingestion.queue import get_enqueue  # noqa: E402
-from app.ingestion.tasks import ingest_document  # noqa: E402
+from app.ingestion.tasks import index_document, ingest_document  # noqa: E402
 from app.main import app  # noqa: E402
 from app.redis_client import get_redis  # noqa: E402
 from app.storage import LocalStorage, get_storage  # noqa: E402
+from tests.fakes import FakeEmbedder  # noqa: E402
 
 GOOD_PASSWORD = "correct-horse-battery-42"  # pragma: allowlist secret
 
@@ -42,6 +43,8 @@ def engine():
     admin.dispose()
 
     engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     yield engine
@@ -63,7 +66,12 @@ def storage(tmp_path):
 
 
 @pytest.fixture
-def make_client(db, storage):
+def embedder():
+    return FakeEmbedder()
+
+
+@pytest.fixture
+def make_client(db, storage, embedder):
     """Returns a factory: each call is a separate browser with its own cookie jar."""
     redis = fakeredis.FakeRedis()
 
@@ -74,10 +82,14 @@ def make_client(db, storage):
         finally:
             session.close()
 
-    def _enqueue_inline(document_id):
-        # Run ingestion synchronously so tests see the final document state immediately.
+    def _index_inline(document_id):
         with db() as session:
-            ingest_document(session, storage, document_id)
+            index_document(session, embedder, document_id)
+
+    def _enqueue_inline(document_id):
+        # Run ingestion + indexing synchronously so tests see the final document state.
+        with db() as session:
+            ingest_document(session, storage, document_id, index=_index_inline)
 
     app.dependency_overrides[get_session] = _session
     app.dependency_overrides[get_redis] = lambda: redis

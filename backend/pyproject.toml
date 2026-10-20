@@ -18,7 +18,19 @@ dependencies = [
     "pymupdf>=1.24",
     "python-docx>=1.1",
     "python-pptx>=1.0",
+    "pgvector>=0.3",
+    "sentence-transformers>=3.0",
+    "torch>=2.4",
 ]
+
+# CPU-only torch: the default Linux wheel bundles ~2 GB of CUDA libraries we never use.
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [dependency-groups]
 dev = [
@@ -31,6 +43,14 @@ dev = [
 
 [tool.uv]
 package = false
+# pymupdf 2.0 bundles an ONNX layout model that `import pymupdf` loads into every parsing job,
+# though we never call page.get_layout(). Without onnxruntime that optional import fails and
+# pymupdf skips it. Guarded by test_pdf_layout_model_is_not_loaded.
+override-dependencies = [
+    "pymupdf-layout; sys_platform == 'never'",
+    "pymupdf4llm; sys_platform == 'never'",
+    "onnxruntime; sys_platform == 'never'",
+]
 
 [tool.ruff]
 line-length = 100
@@ -47,3 +67,5 @@ select = ["E", "F", "I", "B", "UP", "S"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+addopts = "-m 'not slow'"
+markers = ["slow: loads the real embedding model (run with -m slow)"]

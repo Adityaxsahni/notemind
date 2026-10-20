@@ -1,11 +1,16 @@
 from logging.config import fileConfig
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.dialects.postgresql.base import ischema_names
 
 from alembic import context
 from app import models  # noqa: F401  (registers tables on Base.metadata)
 from app.config import get_settings
 from app.db import Base
+
+# Teach reflection about pgvector's type so `alembic check` can compare the chunks table.
+ischema_names["vector"] = Vector
 
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)

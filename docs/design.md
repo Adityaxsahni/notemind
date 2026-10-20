@@ -53,7 +53,9 @@ exact page, and turns that material into quizzes.
 Next.js UI ──HTTPS──> FastAPI ──> PostgreSQL + pgvector
                          │  └──> Redis (cache, rate limits, token budgets, job queue)
                          ▼
-                 RQ ingestion worker: validate → extract → clean → chunk → embed → store
+                 RQ ingestion worker (forked, memory-capped): extract → clean → store pages
+                         ▼
+                 RQ indexing worker (model loaded once): chunk → embed → store chunks
 Query: question → embed → hybrid search (vector + full-text, tenant-filtered in SQL)
        → cross-encoder rerank → top-k → LLM gateway (grounded prompt) → answer + citations
 ```
@@ -123,8 +125,16 @@ links, admin/ops access, third-party LLM API.
 | Where files are parsed | **Only in the worker** (timeout, 2 GB rlimit, container mem cap). API checks magic bytes + ZIP directory only | Parse in the API | A malicious file that crashes or bloats the parser takes down one job, not the API serving everyone |
 | PDF library | **PyMuPDF** | pypdf, pdfplumber | Much faster and better text order. AGPL-licensed: fine while this repo is public; revisit (pypdf) if it goes closed-source |
 | Scanned PDFs | **Rejected with a clear "needs OCR" message** (for now) | Tesseract OCR in worker | Keeps the worker image small for the MVP; OCR is a Later item |
+| Ingestion pipeline | **Two queues**: parsing in a forked, rlimited work-horse per job; chunk + embed in a separate in-process worker | One job does everything | Parsing untrusted files needs a fresh, capped process; embedding needs the model kept loaded (loading per job costs seconds, and a 2 GB address-space cap breaks torch). The indexer also gets no access to raw uploads |
+| Chunk boundaries | **Never across pages or headings**; split paragraph → line → sentence, words only for an over-long sentence; overlap by whole sentences | Fixed windows over the whole document | Every citation points at exactly one page; no chunk mixes two topics. Slides give short chunks; Phase 7 measures whether that hurts |
+| Heading context | **Heading carried across pages, prepended to the embedding input, weighted 'A' in the tsvector** | Embed body text only | "It removes redundancy…" alone doesn't say *what* does; the heading supplies that context |
+| Tenant column on chunks | **`user_id` = the collection owner, denormalized** | Join through collections on every query | Lets every search filter `(user_id, collection_id)` in the same SQL statement, backed by one composite index |
+| Model supply chain | **Exact Hub commit pinned, weights baked into the image, `HF_HUB_OFFLINE=1` at runtime**, CPU-only torch wheels | Download `main` on first use | A re-pushed model can't change behaviour silently; containers need no internet; image avoids ~2 GB of unused CUDA libraries |
 
 ## 8. Open questions
 - Which LLM provider/plan guarantees no training on API data at our budget?
 - Is OCR quality (tesseract) good enough for handwritten notes, or defer to a vision model?
-- Hosting for the embedding + reranker models: same container as worker, or separate service?
+- Reranker hosting: load it in the API process (simplest), or a small internal service shared
+  by API replicas? (Embeddings are settled: the indexing worker, see §7.)
+- HNSW + tenant filter: with many tenants, check recall and enable pgvector's
+  `hnsw.iterative_scan` so filtered searches still return k results (Phase 6/7).

@@ -45,7 +45,7 @@ services:
 
   worker:
     build: ./backend
-    command: ["python", "-m", "app.worker"]
+    command: ["python", "-m", "app.worker", "ingestion"]
     # Parses untrusted files: cap memory so a malicious document can't starve the host.
     mem_limit: 2g
     volumes:
@@ -55,6 +55,22 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       UPLOAD_DIR: /data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  indexer:
+    build: ./backend
+    # Chunks and embeds extracted text; keeps the embedding model loaded between jobs.
+    command: ["python", "-m", "app.worker", "indexing"]
+    mem_limit: 2g
+    # No uploads volume: it reads extracted pages from Postgres and never touches raw files.
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy

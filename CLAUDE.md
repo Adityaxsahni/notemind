@@ -13,6 +13,8 @@ questions and get answers with page-level citations, and generate quizzes from t
 
 ## Layout
 - `backend/app/` — API (`api/`), config, db, worker; `backend/tests/`; `backend/alembic/`
+- `backend/app/ingestion/` — upload validation, extraction, cleaning, chunking, RQ jobs.
+  Two queues: `ingestion` (parses untrusted files) → `indexing` (chunks + embeds)
 - `ml/` — evaluation sets, experiments, reports
 - `frontend/` — web UI
 - `infra/` — deployment config
@@ -20,7 +22,7 @@ questions and get answers with page-level citations, and generate quizzes from t
 
 ## Commands (run from `backend/`)
 - `uv sync` — install deps
-- `uv run pytest` — tests
+- `uv run pytest` — tests (fake embedder); `uv run pytest -m slow` — real embedding model
 - `uv run ruff check . && uv run ruff format .` — lint/format
 - `uv run uvicorn app.main:app --reload` — dev server
 - `uv run alembic revision --autogenerate -m "msg"` / `uv run alembic upgrade head`
