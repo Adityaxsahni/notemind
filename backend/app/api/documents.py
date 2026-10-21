@@ -15,7 +15,12 @@ from app.config import get_settings
 from app.deps import CurrentUser, RedisDep, SessionDep
 from app.ingestion.queue import EnqueueDep
 from app.ingestion.tasks import expire_stale, mark_failed
-from app.ingestion.validation import UploadRejected, detect_kind, safe_display_name
+from app.ingestion.validation import (
+    UploadRejected,
+    detect_kind,
+    image_media_type,
+    safe_display_name,
+)
 from app.models import Document, DocumentKind
 from app.rate_limit import enforce_rate_limit
 from app.schemas import DocumentOut
@@ -203,9 +208,15 @@ def download_document(
 ) -> FileResponse:
     assert_can_access(session, user, collection_id, Action.READ)
     document = _get_document(session, collection_id, document_id)
+    path = storage.path_for(document.storage_key)
+    # From the detected type, never client-supplied.
+    if document.kind == DocumentKind.IMAGE:
+        media_type = image_media_type(path)
+    else:
+        media_type = _MEDIA_TYPES[document.kind]
     return FileResponse(
-        storage.path_for(document.storage_key),
-        media_type=_MEDIA_TYPES[document.kind],  # from detected type, never client-supplied
+        path,
+        media_type=media_type,
         filename=document.filename,
         content_disposition_type="attachment",
         # If a browser ever renders this inline, block scripts and same-origin access.

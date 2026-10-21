@@ -34,7 +34,14 @@ def client() -> httpx.Client:
 
 def signup(c: httpx.Client, tag: str) -> str:
     email = f"{tag}-{uuid.uuid4().hex[:8]}@example.com"
-    r = c.post("/auth/signup", json={"email": email, "password": PASSWORD})
+    # Like the real form: load the bot-check token, take a human amount of time, leave the
+    # honeypot empty. (With Turnstile enabled, sign-up needs a real browser instead.)
+    token = c.get("/auth/form-token").json()["token"]
+    time.sleep(2.2)
+    r = c.post(
+        "/auth/signup",
+        json={"email": email, "password": PASSWORD, "form_token": token, "website": ""},
+    )
     check(f"sign up {tag}", r.status_code == 201, f"{r.status_code} {r.text[:120]}")
     # Browsers treat http://localhost as secure and send Secure cookies to it; httpx doesn't,
     # so re-add them without the flag.
@@ -188,6 +195,33 @@ def main(pdf_path: str) -> int:
     signup(stranger, "eve")
     r = stranger.get(f"/collections/{cid}")
     check("stranger can't see the collection", r.status_code == 404, f"{r.status_code}")
+
+    # --- security & website -------------------------------------------------------------------
+    bot = client()
+    r = bot.post("/auth/signup", json={"email": "bot@example.com", "password": PASSWORD})
+    check("bot sign-up without form token refused", r.status_code == 400, f"{r.status_code}")
+    r = stranger.get("/admin/audit-log")
+    check("admin pages closed to normal users", r.status_code == 403, f"{r.status_code}")
+    for path in (
+        "/",
+        "/features",
+        "/privacy",
+        "/terms",
+        "/robots.txt",
+        "/sitemap.xml",
+        "/opengraph-image",
+    ):
+        r = bot.get(path)
+        check(f"page {path}", r.status_code == 200, f"{r.status_code} {len(r.content)} bytes")
+    r = bot.get("/no-such-page")
+    check("custom 404 page", r.status_code == 404 and "our notes" in r.text, f"{r.status_code}")
+    headers = bot.get("/").headers
+    check(
+        "security headers on pages",
+        "frame-ancestors 'none'" in headers.get("content-security-policy", "")
+        and headers.get("x-frame-options") == "DENY",
+        headers.get("content-security-policy", "")[:60],
+    )
 
     # --- data rights --------------------------------------------------------------------------
     r = alice.get("/me/export")

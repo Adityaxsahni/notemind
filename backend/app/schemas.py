@@ -1,14 +1,45 @@
+import re
 import uuid
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
 from app.models import DocumentKind, DocumentStatus, Role
 from app.security.passwords import password_problem
 
+# Control characters (NUL, escape sequences, bidi overrides) have no place in names or
+# questions and can hide text in logs and UIs. Newlines and tabs are allowed.
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u202a-\u202e\u2066-\u2069]")
 
-class SignupIn(BaseModel):
+
+def _no_control_chars(value: str) -> str:
+    if _CONTROL.search(value):
+        raise ValueError("contains characters that aren't allowed")
+    return value
+
+
+class HumanCheckIn(BaseModel):
+    """Bot checks for public forms (app/security/bot.py)."""
+
+    form_token: str | None = Field(default=None, max_length=64)
+    website: str = Field(default="", max_length=200)  # honeypot: hidden from people
+    captcha_token: str | None = Field(default=None, max_length=4096)
+
+
+class FormTokenOut(BaseModel):
+    token: str
+
+
+class SignupIn(HumanCheckIn):
     email: EmailStr
     password: str = Field(min_length=10, max_length=128)
 
@@ -20,7 +51,7 @@ class SignupIn(BaseModel):
         return self
 
 
-class LoginIn(BaseModel):
+class LoginIn(HumanCheckIn):
     email: EmailStr
     # No minimum here: login must not reveal the password policy. Max bounds hashing cost.
     password: str = Field(max_length=128)
@@ -39,7 +70,9 @@ class UserOut(BaseModel):
 
 
 CollectionName = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=120),
+    AfterValidator(_no_control_chars),
 ]
 
 
@@ -89,6 +122,7 @@ class DocumentOut(BaseModel):
     status: DocumentStatus
     progress: int
     page_count: int | None
+    transcribed_pages: int
     error: str | None
     created_at: datetime
 
@@ -97,7 +131,11 @@ class InviteAcceptIn(BaseModel):
     token: str = Field(min_length=1, max_length=128)
 
 
-Question = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+Question = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=500),
+    AfterValidator(_no_control_chars),
+]
 
 
 class SearchIn(BaseModel):
@@ -127,7 +165,11 @@ class AskIn(BaseModel):
     question: Question
 
 
-Topic = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+Topic = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
+    AfterValidator(_no_control_chars),
+]
 
 
 class QuizIn(BaseModel):

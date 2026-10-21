@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 _COUNTER_TTL_SECONDS = 2 * 24 * 3600
 _CHARS_PER_TOKEN = 3  # conservative for English (real ratio is ~4), so holds err high
+# A page image costs ~1,300 input tokens on Claude and ~260-1,100 on Gemini; hold the high end.
+_TOKENS_PER_IMAGE = 1600
 
 
 class BudgetExceeded(Exception):
@@ -51,11 +53,14 @@ class LLMGateway:
         *,
         user_daily_budget: int,
         global_daily_budget: int,
+        user_scope: str = "user",
     ) -> None:
         self._provider = provider
         self._redis = redis
         self._user_budget = user_daily_budget
         self._global_budget = global_daily_budget
+        # Separate per-user counters per purpose (answers vs. transcription); one global cap.
+        self._user_scope = user_scope
 
     def reserve(self, user_id: uuid.UUID, request: LLMRequest) -> Reservation:
         """Hold the worst-case token cost, or raise BudgetExceeded / LLMNotConfigured."""
@@ -64,7 +69,7 @@ class LLMGateway:
         now = datetime.now(UTC)
         day = now.strftime("%Y-%m-%d")
         reservation = Reservation(
-            user_key=f"llm:tokens:user:{user_id}:{day}",
+            user_key=f"llm:tokens:{self._user_scope}:{user_id}:{day}",
             global_key=f"llm:tokens:global:{day}",
             tokens=estimate_input_tokens(request) + request.max_tokens,
         )
@@ -128,4 +133,5 @@ class LLMGateway:
 
 
 def estimate_input_tokens(request: LLMRequest) -> int:
-    return math.ceil((len(request.system) + len(request.user)) / _CHARS_PER_TOKEN)
+    text = math.ceil((len(request.system) + len(request.user)) / _CHARS_PER_TOKEN)
+    return text + _TOKENS_PER_IMAGE * len(request.images)

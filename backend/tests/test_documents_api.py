@@ -89,11 +89,12 @@ def test_filename_is_sanitized(alice, cid):
 # --- processing failures are reported, not crashes ---------------------------------------------
 
 
-def test_pdf_without_text_fails_with_ocr_message(alice, cid):
+def test_blank_pdf_fails_with_no_text_message(alice, cid, vision_llm):
     doc_id = upload(alice, cid, make_pdf([""])).json()["id"]
     doc = alice.get(f"/collections/{cid}/documents/{doc_id}").json()
     assert doc["status"] == "failed"
-    assert "OCR" in doc["error"]
+    assert doc["error"] == "No text found in this file."
+    assert vision_llm.requests == []  # nothing drawn on the page: not sent for transcription
 
 
 def test_corrupted_pdf_fails_gracefully(alice, cid):

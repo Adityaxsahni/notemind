@@ -19,8 +19,20 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+psycopg://notemind:notemind@127.0.0.1:5432/notemind"  # pragma: allowlist secret
     )
+    # Per process. Sync routes run on a 40-thread pool, so with SQLAlchemy's default of 5 + 10
+    # requests queue for a connection under load. Keep processes × (size + overflow) below
+    # Postgres's max_connections (100), leaving room for workers and migrations.
+    db_pool_size: int = 10
+    db_max_overflow: int = 10
     redis_url: str = "redis://127.0.0.1:6379/0"
-    cors_origins: list[str] = ["http://localhost:3000"]
+    # Empty: the browser only talks to the Next.js origin, which proxies the API, so no
+    # cross-origin access is needed. List exact origins only if another site must call the API.
+    cors_origins: list[str] = []
+    # Requests per minute per client IP across the whole API (route-specific limits are lower).
+    global_rate_limit_per_minute: int = 600
+    # Bot checks on sign-up and log-in (app/security/bot.py).
+    bot_min_fill_seconds: float = 2.0
+    turnstile_secret_key: SecretStr | None = None
 
     upload_dir: Path = Path("data/uploads")
     max_upload_bytes: int = 200 * 1024 * 1024  # big course packs and image-heavy slide exports
@@ -62,6 +74,14 @@ class Settings(BaseSettings):
     llm_global_daily_token_budget: int = 5_000_000  # caps total spend if many users pile on
     answer_cache_ttl_seconds: int = 24 * 3600
 
+    # Handwriting, scans and photos: pages with no text layer are read by a vision model.
+    ocr_model: str | None = None  # default: llm_answer_model (same vendor and key)
+    ocr_pages_per_request: int = 4  # fewer requests: free tiers count requests, not tokens
+    ocr_concurrency: int = 4
+    ocr_max_pages: int = 300  # per document
+    # ~2,000 tokens per page in and out, so ~500 handwritten pages per user per day.
+    llm_user_daily_ocr_token_budget: int = 1_000_000
+
     @model_validator(mode="after")
     def _check_chunking(self) -> "Settings":
         if not 50 <= self.chunk_target_tokens <= 480:
@@ -76,6 +96,13 @@ class Settings(BaseSettings):
             key = self.secret_key.get_secret_value()
             if key == _DEV_SECRET or len(key) < 32:
                 raise ValueError("SECRET_KEY must be set to a random value of 32+ chars")
+        return self
+
+    @model_validator(mode="after")
+    def _no_wildcard_cors(self) -> "Settings":
+        # Credentials (auth cookies) with a wildcard origin would let any site act as the user.
+        if "*" in self.cors_origins:
+            raise ValueError("CORS_ORIGINS must list exact origins, not *")
         return self
 
     @property

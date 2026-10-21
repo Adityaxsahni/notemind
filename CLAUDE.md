@@ -20,9 +20,12 @@ questions and get answers with page-level citations, and generate quizzes from t
 - `ml/` — evaluation sets, experiments, reports
 - `frontend/` — Next.js 16 + Tailwind 4 UI. Read `frontend/AGENTS.md` first: this Next version
   differs from older docs. Browser calls are same-origin; `next.config.ts` rewrites API paths
-  to the backend (keep page routes off `/auth`, `/me`, `/collections`, `/invites`)
+  to the backend (keep page routes off `/auth`, `/me`, `/collections`, `/invites`, `/analytics`,
+  `/telemetry`, `/admin`; the admin page is `/insights`)
 - `infra/` — deployment config
-- `docs/` — design.md, performance.md, runbook
+- `docs/` — PRD, ARCHITECTURE, DESIGN (visual system), RULES, TASKS, DECISIONS, MEMORY,
+  TEST_PLAN, SECURITY, PERFORMANCE, CI_CD, SYSTEM_DESIGN (design doc + threat model). Update
+  MEMORY.md and TASKS.md at the end of a working session
 
 ## Commands (run from `backend/`)
 - `uv sync` — install deps
@@ -56,3 +59,7 @@ questions and get answers with page-level citations, and generate quizzes from t
    "I couldn't find this in your notes" without calling the LLM.
 6. Secrets only via environment variables. `.env` is never committed.
 7. Authorization checks go through one helper (`assert_can_access`), used by every endpoint.
+8. Tenant tables are protected by Postgres row-level security (`app/rls.py`). New tables get
+   policies plus a migration that re-applies them; never connect the app as the table owner.
+9. Every API route requires login unless listed in `PUBLIC_ROUTES` (tests/test_hardening.py);
+   public routes need their own rate limits. Admin rights are granted only via the CLI.

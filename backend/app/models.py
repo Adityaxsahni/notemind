@@ -16,7 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -42,6 +42,8 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(320), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    # Granted only from the command line (python -m app.admin), never through the API.
+    is_admin: Mapped[bool] = mapped_column(default=False, server_default="false")
     created_at: Mapped[datetime] = _created_at()
 
 
@@ -98,6 +100,7 @@ class DocumentKind(enum.StrEnum):
     PDF = "pdf"
     DOCX = "docx"
     PPTX = "pptx"
+    IMAGE = "image"  # a photo or scan of notes (JPEG, PNG, WebP); its text is transcribed
 
 
 class DocumentStatus(enum.StrEnum):
@@ -129,6 +132,8 @@ class Document(Base):
     )
     progress: Mapped[int] = mapped_column(default=0)
     page_count: Mapped[int | None]
+    # Pages read from images (handwriting, scans) rather than a text layer.
+    transcribed_pages: Mapped[int] = mapped_column(default=0, server_default="0")
     error: Mapped[str | None] = mapped_column(String(300))  # user-safe message only
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = mapped_column(
@@ -207,3 +212,44 @@ class InviteLink(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
+
+
+class AuditLog(Base):
+    """Append-only record of admin and security-relevant actions (who did what, when).
+
+    The app's database role can insert and (for admins) read these rows, never change or
+    delete them. actor_id has no foreign key so the trail outlives deleted accounts; the
+    client address is stored only as a keyed hash.
+    """
+
+    __tablename__ = "audit_log"
+    # The app may insert but not read these rows back (row-level security), so no RETURNING.
+    __table_args__ = {"implicit_returning": False}
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(index=True)  # None: command line
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    target_type: Mapped[str | None] = mapped_column(String(32))
+    target_id: Mapped[str | None] = mapped_column(String(64))
+    details: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    ip_hash: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
+class AnalyticsEvent(Base):
+    """A page view from a visitor who accepted analytics. No user id, IP, or cookie: just
+    which page, from which site, on what kind of device."""
+
+    __tablename__ = "analytics_events"
+    # The app may insert but not read these rows back (row-level security), so no RETURNING.
+    __table_args__ = {"implicit_returning": False}
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    path: Mapped[str] = mapped_column(String(200))
+    referrer_host: Mapped[str | None] = mapped_column(String(100))
+    device: Mapped[str] = mapped_column(String(16))  # "mobile" | "desktop"
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )

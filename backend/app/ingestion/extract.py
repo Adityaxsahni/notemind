@@ -4,6 +4,7 @@ Each extractor returns pages in reading order:
 - PDF: one entry per page
 - PPTX: one entry per slide (including speaker notes and tables)
 - DOCX: one entry per section (DOCX has no fixed pages; we split at Heading 1 or ~4000 chars)
+- Image: one empty page; its text comes from transcription (app/ingestion/ocr.py)
 """
 
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ def extract_pages(path: Path, kind: DocumentKind) -> list[Page]:
         DocumentKind.PDF: _extract_pdf,
         DocumentKind.PPTX: _extract_pptx,
         DocumentKind.DOCX: _extract_docx,
+        DocumentKind.IMAGE: lambda _path: [Page(number=1, text="")],
     }[kind]
     pages = extractor(path)
     if len(pages) > MAX_PAGES:

@@ -29,12 +29,26 @@ services:
     # Worker and indexer reuse this image: one ~2.5 GB build instead of three.
     image: notemind-backend
     # Dev convenience: apply migrations on start. In production this is a separate release step.
-    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    # --proxy-headers: take the visitor's address from X-Forwarded-For, but only when the
+    # request comes from the frontend or edge proxy (fixed addresses below). Otherwise every
+    # visitor would share the proxy's IP in rate limits, and anyone could fake the header.
+    command:
+      - sh
+      - -c
+      - >-
+        alembic upgrade head &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header
+        --proxy-headers --forwarded-allow-ips 172.30.0.10,172.30.0.11
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       UPLOAD_DIR: /data/uploads
+      # API processes (uvicorn reads this). Each loads the search models (~0.9 GB of RAM).
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+      # Torch threads per process: search requests run in parallel threads already, and
+      # several processes on one machine shouldn't each claim every core.
+      OMP_NUM_THREADS: ${API_TORCH_THREADS:-2}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -86,11 +100,40 @@ services:
       context: ./frontend
       args:
         BACKEND_URL: http://backend:8000  # API paths are proxied to the backend container
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+        NEXT_PUBLIC_CONTACT_EMAIL: ${NEXT_PUBLIC_CONTACT_EMAIL:-privacy@notemind.example}
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
+        FORCE_HTTPS: ${FORCE_HTTPS:-false}
+    networks:
+      default:
+        ipv4_address: 172.30.0.10  # the only address the backend trusts X-Forwarded-For from
     # Same port as `npm run dev`: run one or the other.
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
       - backend
+
+  # Production-style entry point: caches pages, sends API calls straight to the backend.
+  # http://localhost:8080 (port 3000 stays the plain frontend for development).
+  edge:
+    image: nginx:1.30.6-alpine
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/notemind.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      default:
+        ipv4_address: 172.30.0.11  # trusted by the backend for X-Forwarded-For
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - backend
+      - frontend
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
 
 volumes:
   pgdata:

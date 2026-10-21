@@ -63,11 +63,20 @@ function sendJson(method: string, body: unknown): RequestInit {
 
 // --- auth & account -----------------------------------------------------------------------
 
-export const signup = (email: string, password: string) =>
-  json<User>("/auth/signup", sendJson("POST", { email, password }));
+/** Bot-check fields the backend expects from its own forms (backend/app/security/bot.py). */
+export interface HumanCheck {
+  form_token: string | null;
+  website: string; // honeypot: always empty for people
+  captcha_token: string | null;
+}
 
-export const login = (email: string, password: string) =>
-  json<User>("/auth/login", sendJson("POST", { email, password }));
+export const getFormToken = () => json<{ token: string }>("/auth/form-token").then((r) => r.token);
+
+export const signup = (email: string, password: string, human: HumanCheck) =>
+  json<User>("/auth/signup", sendJson("POST", { email, password, ...human }));
+
+export const login = (email: string, password: string, human: HumanCheck) =>
+  json<User>("/auth/login", sendJson("POST", { email, password, ...human }));
 
 export const logout = () => request("/auth/logout", { method: "POST" });
 
@@ -150,3 +159,26 @@ export const createQuiz = (collectionId: string, numQuestions: number, topic?: s
     `/collections/${collectionId}/quiz`,
     sendJson("POST", { num_questions: numQuestions, topic: topic || null }),
   );
+
+// --- admin ---------------------------------------------------------------------------------
+
+export interface Analytics {
+  days: number;
+  total_views: number;
+  per_day: { day: string; views: number }[];
+  top_pages: { key: string; views: number }[];
+  referrers: { key: string | null; views: number }[];
+  devices: { key: string; views: number }[];
+}
+
+export interface AuditEntry {
+  id: number;
+  at: string;
+  actor: string;
+  action: string;
+  target: string | null;
+  details: Record<string, unknown>;
+}
+
+export const getAnalytics = (days = 30) => json<Analytics>(`/admin/analytics?days=${days}`);
+export const getAuditLog = (limit = 100) => json<AuditEntry[]>(`/admin/audit-log?limit=${limit}`);

@@ -3,3 +3,7 @@ node_modules
 Dockerfile
 .dockerignore
 npm-debug.log*
+.env*
+e2e
+playwright-report
+test-results

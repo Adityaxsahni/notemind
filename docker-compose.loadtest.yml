@@ -1,0 +1,46 @@
+# Load-test overlay. Adds a k6 load generator that drives the edge proxy as 10,000 users,
+# each with its own client IP, so per-IP rate limits behave as they would with real
+# visitors. Never deploy this file.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.loadtest.yml up -d
+#   docker compose exec -T backend python - --students 3000 < loadtest/seed.py
+#   docker compose -f docker-compose.yml -f docker-compose.loadtest.yml run --rm k6
+#
+# See docs/PERFORMANCE.md.
+services:
+  backend:
+    environment:
+      # Two API processes: on a 16 GB laptop the 10,000-user generator needs ~5 GB itself.
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      UVICORN_ACCESS_LOG: "false"  # a log line per request costs more than the request
+
+  # Not part of the request path; stopped so the generator and the API get the memory.
+  worker:
+    scale: 0
+  indexer:
+    scale: 0
+
+  edge:
+    volumes:
+      - ./loadtest/nginx/loadtest.conf:/etc/nginx/real-ip/loadtest.conf:ro
+
+  k6:
+    image: grafana/k6:2.3.0
+    profiles: ["loadtest"]  # only started by `run k6`
+    networks:
+      default:
+        ipv4_address: 172.30.0.20
+    volumes:
+      - ./loadtest:/scripts:ro
+      - ./loadtest/results:/results
+    environment:
+      BASE_URL: ${LOADTEST_TARGET:-http://edge:8080}
+      PEAK_USERS: ${PEAK_USERS:-10000}
+      STUDENT_SHARE: ${STUDENT_SHARE:-0.3}
+      PROFILE: ${PROFILE:-full}
+      K6_WEB_DASHBOARD: "true"
+      K6_WEB_DASHBOARD_EXPORT: /results/report.html
+      K6_WEB_DASHBOARD_PERIOD: 10s
+    command: ["run", "--summary-export", "/results/summary.json", "/scripts/notemind.js"]
+    depends_on:
+      - edge

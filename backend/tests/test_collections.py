@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.models import InviteLink
-from tests.conftest import GOOD_PASSWORD, signup
+from tests.conftest import GOOD_PASSWORD, human, signup
 
 
 @pytest.fixture
@@ -201,8 +201,9 @@ def test_delete_account_requires_password_and_erases_data(alice, bob, make_clien
     # Session is dead, data is gone, and the shared collection vanished for Bob too.
     assert alice.get("/me").status_code == 401
     assert bob.get(f"/collections/{cid}").status_code == 404
-    login = make_client().post(
-        "/auth/login", json={"email": "alice@x.com", "password": GOOD_PASSWORD}
+    client = make_client()
+    login = client.post(
+        "/auth/login", json={**human(client), "email": "alice@x.com", "password": GOOD_PASSWORD}
     )
     assert login.status_code == 401
 

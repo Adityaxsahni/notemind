@@ -7,7 +7,7 @@ import { ApiError } from "./api";
 
 /** Only same-site relative paths: never redirect to another origin after login. */
 export function safeNext(next: string | null): string {
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/courses";
 }
 
 /**

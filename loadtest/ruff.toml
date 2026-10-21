@@ -1,0 +1,8 @@
+# Same rules as the backend; seed.py runs inside the backend image, so `app` is first-party.
+extend = "../backend/pyproject.toml"
+
+[lint]
+extend-ignore = ["E501"]
+
+[lint.isort]
+known-first-party = ["app"]

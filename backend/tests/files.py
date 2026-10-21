@@ -81,3 +81,34 @@ def make_docm_with_macro() -> bytes:
             "word/vbaProject.bin": b'Attribute VB_Name = "evil"',
         }
     )
+
+
+def make_scanned_pdf(pages: list[str | None]) -> bytes:
+    """Each entry is typed text, or None for a page that is only a picture (a scan)."""
+    document = pymupdf.open()
+    for text in pages:
+        page = document.new_page()
+        if text is None:
+            picture = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 80), 0)
+            picture.clear_with(180)
+            page.insert_image(pymupdf.Rect(72, 72, 360, 456), pixmap=picture)
+        else:
+            page.insert_text((72, 72), text, fontsize=11)
+    data = document.tobytes()
+    document.close()
+    return data
+
+
+def make_photo(fmt: str = "JPEG", size: tuple[int, int] = (300, 200), rotate=False) -> bytes:
+    """A photo as a phone saves it; `rotate` stores it sideways with an EXIF orientation."""
+    from PIL import Image
+
+    photo = Image.new("RGB", size, (240, 236, 225))
+    out = io.BytesIO()
+    if rotate:
+        exif = Image.Exif()
+        exif[0x0112] = 6  # Orientation: rotate 90° clockwise to display
+        photo.save(out, fmt, exif=exif)
+    else:
+        photo.save(out, fmt)
+    return out.getvalue()

@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.models import RefreshToken, User
 from app.security.tokens import create_access_token
-from tests.conftest import GOOD_PASSWORD, signup
+from tests.conftest import GOOD_PASSWORD, human, signup
 
 WRONG_PASSWORD = "definitely-not-it-99"  # pragma: allowlist secret
 
@@ -16,7 +16,9 @@ def _set_cookie_headers(response):
 
 
 def test_signup_sets_hardened_cookies_and_hides_hash(client):
-    response = client.post("/auth/signup", json={"email": "a@x.com", "password": GOOD_PASSWORD})
+    response = client.post(
+        "/auth/signup", json={**human(client), "email": "a@x.com", "password": GOOD_PASSWORD}
+    )
     assert response.status_code == 201
     body = response.json()
     assert body["email"] == "a@x.com"
@@ -31,6 +33,10 @@ def test_signup_sets_hardened_cookies_and_hides_hash(client):
         assert "secure" in lowered
         assert "samesite=strict" in lowered
     assert "path=/auth" in refresh.lower()
+    # The UI hint is readable by scripts, so it must never carry anything secret.
+    hint = next(c for c in cookies if c.startswith("signed_in="))
+    assert hint.startswith("signed_in=1;")
+    assert "httponly" not in hint.lower()
 
 
 def test_password_stored_with_argon2id(client, db):
@@ -42,7 +48,9 @@ def test_password_stored_with_argon2id(client, db):
 
 def test_duplicate_email_is_case_insensitive(client):
     signup(client, "a@x.com")
-    response = client.post("/auth/signup", json={"email": "A@X.com", "password": GOOD_PASSWORD})
+    response = client.post(
+        "/auth/signup", json={**human(client), "email": "A@X.com", "password": GOOD_PASSWORD}
+    )
     assert response.status_code == 409
 
 
@@ -57,13 +65,17 @@ def test_duplicate_email_is_case_insensitive(client):
     ],
 )
 def test_weak_passwords_rejected(client, password):
-    response = client.post("/auth/signup", json={"email": "alice@x.com", "password": password})
+    response = client.post(
+        "/auth/signup", json={**human(client), "email": "alice@x.com", "password": password}
+    )
     assert response.status_code == 422
 
 
 def test_validation_errors_do_not_echo_password(client):
     secret = "password123"  # pragma: allowlist secret
-    response = client.post("/auth/signup", json={"email": "alice@x.com", "password": secret})
+    response = client.post(
+        "/auth/signup", json={**human(client), "email": "alice@x.com", "password": secret}
+    )
     assert response.status_code == 422
     assert secret not in response.text
 
@@ -71,8 +83,12 @@ def test_validation_errors_do_not_echo_password(client):
 def test_login_errors_are_identical_for_unknown_email_and_wrong_password(make_client):
     signup(make_client(), "a@x.com")
     client = make_client()
-    wrong_pw = client.post("/auth/login", json={"email": "a@x.com", "password": WRONG_PASSWORD})
-    no_user = client.post("/auth/login", json={"email": "b@x.com", "password": WRONG_PASSWORD})
+    wrong_pw = client.post(
+        "/auth/login", json={**human(client), "email": "a@x.com", "password": WRONG_PASSWORD}
+    )
+    no_user = client.post(
+        "/auth/login", json={**human(client), "email": "b@x.com", "password": WRONG_PASSWORD}
+    )
     assert wrong_pw.status_code == no_user.status_code == 401
     assert wrong_pw.json() == no_user.json()
 
@@ -80,7 +96,9 @@ def test_login_errors_are_identical_for_unknown_email_and_wrong_password(make_cl
 def test_login_success_then_me(make_client):
     signup(make_client(), "a@x.com")
     client = make_client()
-    response = client.post("/auth/login", json={"email": "A@x.com", "password": GOOD_PASSWORD})
+    response = client.post(
+        "/auth/login", json={**human(client), "email": "A@x.com", "password": GOOD_PASSWORD}
+    )
     assert response.status_code == 200
     assert client.get("/me").json()["email"] == "a@x.com"
 
@@ -90,14 +108,16 @@ def test_login_is_rate_limited(make_client):
     client = make_client()
     codes = [
         client.post(
-            "/auth/login", json={"email": "a@x.com", "password": WRONG_PASSWORD}
+            "/auth/login", json={**human(client), "email": "a@x.com", "password": WRONG_PASSWORD}
         ).status_code
         for _ in range(6)
     ]
     assert codes[:5] == [401] * 5
     assert codes[5] == 429
     # Even the correct password is refused while limited: brute force can't "get lucky".
-    response = client.post("/auth/login", json={"email": "a@x.com", "password": GOOD_PASSWORD})
+    response = client.post(
+        "/auth/login", json={**human(client), "email": "a@x.com", "password": GOOD_PASSWORD}
+    )
     assert response.status_code == 429
     assert "Retry-After" in response.headers
 

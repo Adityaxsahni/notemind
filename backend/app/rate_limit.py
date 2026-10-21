@@ -1,11 +1,17 @@
 import hashlib
+from typing import Annotated
 
-from fastapi import HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
 from redis import Redis
+
+from app.config import get_settings
+from app.redis_client import get_redis
 
 
 def client_ip(request: Request) -> str:
-    # Behind a proxy, run uvicorn with --proxy-headers and trusted --forwarded-allow-ips.
+    """The visitor's address. Behind the Next.js proxy, uvicorn's --proxy-headers rewrites
+    request.client from X-Forwarded-For, trusting it only from FORWARDED_ALLOW_IPS (the
+    proxy's network). Without that, every visitor would share the proxy's address."""
     return request.client.host if request.client else "unknown"
 
 
@@ -26,3 +32,16 @@ def enforce_rate_limit(
             detail="Too many requests. Please try again later.",
             headers={"Retry-After": str(retry_after if retry_after > 0 else window_seconds)},
         )
+
+
+def global_rate_limit(request: Request, redis: Annotated[Redis, Depends(get_redis)]) -> None:
+    """App-wide dependency: a generous per-IP ceiling on every route except the health check."""
+    if request.url.path == "/health":
+        return
+    enforce_rate_limit(
+        redis,
+        "global",
+        client_ip(request),
+        limit=get_settings().global_rate_limit_per_minute,
+        window_seconds=60,
+    )

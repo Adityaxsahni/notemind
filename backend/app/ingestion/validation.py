@@ -20,6 +20,17 @@ MAX_CONTENT_TYPES_XML = 1024 * 1024
 _PDF_MAGIC = b"%PDF-"
 _ZIP_MAGIC = b"PK\x03\x04"
 _OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # legacy .doc/.ppt and encrypted Office files
+_JPEG_MAGIC = b"\xff\xd8\xff"
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+_HEIF_BRANDS = (b"heic", b"heix", b"hevc", b"mif1", b"msf1", b"avif")
+
+# Photos of notes: detected image format -> (media type, extensions that may carry it).
+IMAGE_FORMATS = {
+    "jpeg": ("image/jpeg", {".jpg", ".jpeg"}),
+    "png": ("image/png", {".png"}),
+    "webp": ("image/webp", {".webp"}),
+}
+UNSUPPORTED = "Unsupported file type. Upload a PDF, DOCX, PPTX, or a photo (JPG, PNG, WebP)."
 
 
 class UploadRejected(Exception):
@@ -40,9 +51,40 @@ def safe_display_name(raw: str) -> str:
     return name or "document"
 
 
+def image_format(head: bytes) -> str | None:
+    """The image format (jpeg, png or webp) from a file's first 12 bytes, else None."""
+    if head.startswith(_JPEG_MAGIC):
+        return "jpeg"
+    if head.startswith(_PNG_MAGIC):
+        return "png"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+def image_media_type(path: Path) -> str:
+    with path.open("rb") as f:
+        return IMAGE_FORMATS[image_format(f.read(12)) or "jpeg"][0]
+
+
 def detect_kind(path: Path, filename: str) -> DocumentKind:
     with path.open("rb") as f:
-        head = f.read(8)
+        head = f.read(12)
+    suffix = PurePosixPath(filename.lower()).suffix
+
+    if (image := image_format(head)) is not None:
+        if suffix not in IMAGE_FORMATS[image][1]:
+            raise UploadRejected(
+                f"The file extension doesn't match its contents (looks like a {image.upper()}).",
+                status_code=415,
+            )
+        return DocumentKind.IMAGE
+    if head[4:8] == b"ftyp" and head[8:12] in _HEIF_BRANDS:
+        raise UploadRejected(
+            "HEIC photos aren't supported yet. Export the photo as JPEG, or set your camera "
+            "to “Most Compatible”.",
+            status_code=415,
+        )
 
     if head.startswith(_PDF_MAGIC):
         kind = DocumentKind.PDF
@@ -55,11 +97,11 @@ def detect_kind(path: Path, filename: str) -> DocumentKind:
             status_code=415,
         )
     else:
-        raise UploadRejected("Unsupported file type. Upload a PDF, DOCX or PPTX.", 415)
+        raise UploadRejected(UNSUPPORTED, 415)
 
     # The extension must agree with the actual content: a ".pdf" that is really a ZIP
     # is either a mistake or an attempt to confuse something downstream.
-    if PurePosixPath(filename.lower()).suffix != f".{kind.value}":
+    if suffix != f".{kind.value}":
         raise UploadRejected(
             f"The file extension doesn't match its contents (looks like a {kind.value.upper()}).",
             status_code=415,
@@ -113,4 +155,4 @@ def _inspect_ooxml(path: Path) -> DocumentKind:
             return DocumentKind.DOCX
         if "ppt/presentation.xml" in names:
             return DocumentKind.PPTX
-    raise UploadRejected("Unsupported file type. Upload a PDF, DOCX or PPTX.", 415)
+    raise UploadRejected(UNSUPPORTED, 415)

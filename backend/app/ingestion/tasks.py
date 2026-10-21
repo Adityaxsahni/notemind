@@ -1,4 +1,5 @@
-"""Background jobs. Ingestion: extract → clean → store pages. Indexing: chunk → embed → store.
+"""Background jobs. Ingestion: extract → transcribe image-only pages → clean → store pages.
+Indexing: chunk → embed → store.
 
 They run on separate queues. Parsing untrusted files needs a fresh, memory-capped process per
 job; embedding trusted text needs the model kept in memory between jobs.
@@ -9,19 +10,31 @@ import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.config import get_settings
-from app.db import new_session
+from app.db import new_session, set_rls_user
 from app.embeddings import Embedder, get_embedder
 from app.ingestion.chunking import chunk_pages, with_heading
 from app.ingestion.clean import clean_pages
 from app.ingestion.extract import ExtractionError, Page, extract_pages
+from app.ingestion.ocr import (
+    PageImage,
+    Transcriber,
+    get_ocr_provider,
+    load_photo,
+    make_transcriber,
+    needs_transcription,
+    render_pdf_pages,
+)
 from app.ingestion.queue import enqueue_indexing
-from app.models import Chunk, Collection, Document, DocumentPage, DocumentStatus
+from app.llm.gateway import BudgetExceeded, LLMNotConfigured
+from app.llm.providers import LLMUnavailable
+from app.models import Chunk, Collection, Document, DocumentKind, DocumentPage, DocumentStatus
 from app.redis_client import get_redis
 from app.storage import LocalStorage, get_storage
 
@@ -33,10 +46,26 @@ EXTRACTED_PROGRESS = 50  # extraction is the first half of the progress bar, ind
 
 GENERIC_FAILURE = "We couldn't read this file. It may be damaged; try re-saving it as PDF."
 INDEXING_FAILURE = "Something went wrong while indexing this file. Please upload it again."
-NO_TEXT_FAILURE = (
-    "No text found. Scanned or handwritten documents need OCR, which isn't supported yet."
-)
+NO_TEXT_FAILURE = "No text found in this file."
+TOO_MANY_SCANNED_PAGES = "Handwritten or scanned documents can have at most {} pages."
+# Why handwriting couldn't be read. Mostly-typed documents are indexed without those pages.
+TRANSCRIPTION_FAILURES = {
+    LLMNotConfigured: "This file is handwritten or scanned. Reading handwriting needs an AI "
+    "provider key, which this server doesn't have.",
+    BudgetExceeded: "You've reached today's limit for reading handwritten pages. Delete this "
+    "file and upload it again tomorrow.",
+    LLMUnavailable: "The handwriting reader is busy right now. Delete this file and upload it "
+    "again in a few minutes.",
+}
 TIMEOUT_FAILURE = "Processing took too long or used too much memory. Try a smaller file."
+
+
+def act_as_document_owner(session: Session, document_id: uuid.UUID) -> None:
+    """Jobs get only a document id from the API; row-level security needs a user, so they
+    act as the owner of the document's collection (None if it was deleted meanwhile)."""
+    owner_id = session.scalar(select(func.app_document_owner(document_id)))
+    if owner_id is not None:
+        set_rls_user(session, owner_id)
 
 
 def ingest_document(
@@ -44,7 +73,9 @@ def ingest_document(
     storage: LocalStorage,
     document_id: uuid.UUID,
     index: Callable[[uuid.UUID], None],
+    transcriber_for: Callable[[uuid.UUID], Transcriber],
 ) -> None:
+    act_as_document_owner(session, document_id)
     document = session.get(Document, document_id)
     if document is None or document.status == DocumentStatus.READY:
         return  # deleted while queued, or already processed (job retried)
@@ -54,7 +85,15 @@ def ingest_document(
     session.commit()
 
     with _fail_on_error(session, document_id, GENERIC_FAILURE):
-        pages = extract_pages(storage.path_for(document.storage_key), document.kind)
+        path = storage.path_for(document.storage_key)
+        pages = extract_pages(path, document.kind)
+        document.progress = 15
+        session.commit()
+
+        pages, transcribed = _transcribe_image_pages(
+            session, document, path, pages, transcriber_for
+        )
+        document.transcribed_pages = transcribed
         document.progress = 40
         session.commit()
 
@@ -73,9 +112,59 @@ def ingest_document(
         index(document.id)
 
 
+def _transcribe_image_pages(
+    session: Session,
+    document: Document,
+    path: Path,
+    pages: list[Page],
+    transcriber_for: Callable[[uuid.UUID], Transcriber],
+) -> tuple[list[Page], int]:
+    """Replace pages that are pictures of text (handwriting, scans, photos) with their
+    transcription. Returns the pages and how many were transcribed."""
+    images: list[PageImage]
+    if document.kind == DocumentKind.IMAGE:
+        images = [load_photo(path)]
+    elif document.kind == DocumentKind.PDF:
+        numbers = [p.number for p in pages if needs_transcription(p.text)]
+        limit = get_settings().ocr_max_pages
+        if len(numbers) > limit:
+            raise ExtractionError(TOO_MANY_SCANNED_PAGES.format(limit))
+        images = list(render_pdf_pages(path, numbers))
+    else:
+        return pages, 0  # picture-only slides and Word pages are diagrams, not notes
+    if not images:
+        return pages, 0
+
+    def progress(done: int) -> None:
+        document.progress = 15 + 25 * done // len(images)
+        session.commit()
+
+    try:
+        texts = transcriber_for(document.uploaded_by).transcribe(images, on_progress=progress)
+    except tuple(TRANSCRIPTION_FAILURES) as exc:
+        typed = sum(1 for p in pages if not needs_transcription(p.text))
+        if typed >= len(images):
+            logger.warning(
+                "indexing document_id=%s without %d image pages: %s",
+                document.id,
+                len(images),
+                type(exc).__name__,
+            )
+            return pages, 0
+        raise ExtractionError(TRANSCRIPTION_FAILURES[type(exc)]) from None
+
+    by_number = {p.number: p for p in pages}
+    for number, text in texts.items():
+        by_number[number] = Page(number=number, text=text)
+    transcribed = sum(1 for text in texts.values() if text.strip())
+    logger.info("transcribed document_id=%s pages=%d", document.id, transcribed)
+    return sorted(by_number.values(), key=lambda p: p.number), transcribed
+
+
 def index_document(session: Session, embedder: Embedder, document_id: uuid.UUID) -> None:
     """Chunk a document's stored pages, embed the chunks, and mark the document ready."""
     settings = get_settings()
+    act_as_document_owner(session, document_id)
     document = session.get(Document, document_id)
     if document is None or document.status != DocumentStatus.PROCESSING:
         return  # deleted, already indexed, or failed while this job waited
@@ -197,6 +286,7 @@ def process_document(document_id: str) -> None:
             get_storage(),
             uuid.UUID(document_id),
             index=lambda doc_id: enqueue_indexing(redis, doc_id),
+            transcriber_for=lambda user_id: make_transcriber(redis, user_id, get_ocr_provider()),
         )
     finally:
         session.close()
@@ -214,6 +304,7 @@ def on_job_failure(job, connection, exc_type, exc_value, tb) -> None:
     """Called by RQ when either job crashes or exceeds its timeout."""
     session = new_session()
     try:
+        act_as_document_owner(session, uuid.UUID(job.args[0]))
         mark_failed(session, uuid.UUID(job.args[0]), TIMEOUT_FAILURE)
     finally:
         session.close()

@@ -2,6 +2,7 @@
 gateway (budgets, logging) and the answer pipeline work with any LLMProvider. Anthropic and
 Google Gemini are supported; the model name picks the vendor."""
 
+import base64
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -20,10 +21,17 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
+class ImageInput:
+    data: bytes
+    mime_type: str  # "image/jpeg" or "image/png"
+
+
+@dataclass(frozen=True)
 class LLMRequest:
     system: str
     user: str
     max_tokens: int
+    images: tuple[ImageInput, ...] = ()  # sent before the text, in order
 
 
 @dataclass(frozen=True)
@@ -74,7 +82,7 @@ class AnthropicProvider:
                 model=self._model,
                 max_tokens=request.max_tokens,
                 system=request.system,
-                messages=[{"role": "user", "content": request.user}],
+                messages=[{"role": "user", "content": _anthropic_content(request)}],
                 output_config={"effort": self._effort},
                 betas=[self._FALLBACK_BETA],
                 fallbacks="default",
@@ -99,6 +107,23 @@ class AnthropicProvider:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )
+
+
+def _anthropic_content(request: LLMRequest) -> str | list[dict]:
+    if not request.images:
+        return request.user
+    images = [
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": image.mime_type,
+                "data": base64.standard_b64encode(image.data).decode(),
+            },
+        }
+        for image in request.images
+    ]
+    return [*images, {"type": "text", "text": request.user}]
 
 
 def _billed_tokens(usage) -> tuple[int, int]:
@@ -160,7 +185,7 @@ class GeminiProvider:
         model, finish, blocked, usage = self._model, None, False, None
         try:
             for chunk in self._client.models.generate_content_stream(
-                model=self._model, contents=request.user, config=config
+                model=self._model, contents=_gemini_contents(request), config=config
             ):
                 if chunk.text:
                     yield TextDelta(chunk.text)
@@ -192,6 +217,16 @@ class GeminiProvider:
             output_tokens=((usage and usage.candidates_token_count) or 0)
             + ((usage and usage.thoughts_token_count) or 0),
         )
+
+
+def _gemini_contents(request: LLMRequest) -> str | list:
+    if not request.images:
+        return request.user
+    images = [
+        genai_types.Part.from_bytes(data=image.data, mime_type=image.mime_type)
+        for image in request.images
+    ]
+    return [*images, request.user]
 
 
 def make_provider(model: str, effort: str, settings: Settings) -> LLMProvider:

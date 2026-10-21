@@ -6,10 +6,11 @@ import { deleteDocument, documentFileUrl, uploadDocument } from "@/lib/api";
 import { useApiErrorHandler } from "@/lib/auth";
 import type { NoteDocument } from "@/lib/types";
 
-import { Alert, Button, Card, ProgressBar, Spinner } from "./ui";
+import { Alert, Button, Card, Chip, HatchTile, ProgressBar, Spinner } from "./ui";
 
 // Mirrors the backend limits for instant feedback; the server still enforces them.
-const ACCEPTED = [".pdf", ".docx", ".pptx"];
+// Photos (and scanned PDFs) of handwritten notes are transcribed by the server.
+const ACCEPTED = [".pdf", ".docx", ".pptx", ".jpg", ".jpeg", ".png", ".webp"];
 const MAX_BYTES = 200 * 1024 * 1024;
 
 export function DocumentsPanel({
@@ -43,7 +44,7 @@ export function DocumentsPanel({
     for (const file of files) {
       const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
       if (!ACCEPTED.includes(extension)) {
-        problems.push(`${file.name}: only PDF, DOCX and PPTX files are supported.`);
+        problems.push(`${file.name}: upload a PDF, DOCX, PPTX, or a photo (JPG, PNG, WebP).`);
         continue;
       }
       if (file.size > MAX_BYTES) {
@@ -77,7 +78,10 @@ export function DocumentsPanel({
   return (
     <Card className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold">Notes</h2>
+        <div>
+          <p className="label-mono">In this course</p>
+          <h2 className="display text-3xl">Notes</h2>
+        </div>
         {canEdit && (
           <>
             <input
@@ -101,46 +105,59 @@ export function DocumentsPanel({
       ))}
 
       {documents.length === 0 ? (
-        <p className="text-sm text-muted">
-          {canEdit ? "PDF, Word or PowerPoint files, up to 200 MB each." : "No notes in this collection yet."}
-        </p>
+        <div className="rounded-xl border border-dashed border-faint p-4 text-sm text-ink-soft">
+          {canEdit
+            ? "PDF, Word or PowerPoint files, or photos of handwritten notes, up to 200 MB each."
+            : "No notes in this collection yet."}
+        </div>
       ) : (
         <ul className="divide-y divide-border">
           {documents.map((document) => (
-            <li key={document.id} className="space-y-1.5 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <a
-                  href={documentFileUrl(collectionId, document.id)}
-                  className="truncate text-sm font-medium hover:underline"
-                  title={`Download ${document.filename}`}
-                >
-                  {document.filename}
-                </a>
-                <div className="flex shrink-0 items-center gap-3">
-                  <StatusBadge document={document} />
-                  {canEdit && (
-                    <button
-                      onClick={() => remove(document)}
-                      className="text-xs text-muted hover:text-danger"
-                      aria-label={`Delete ${document.filename}`}
-                    >
-                      Delete
-                    </button>
-                  )}
+            <li key={document.id} className="flex gap-3 py-3">
+              <HatchTile className="size-12 shrink-0 rounded-lg" />
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <a
+                    href={documentFileUrl(collectionId, document.id)}
+                    className="display truncate text-xl hover:underline"
+                    title={`Download ${document.filename}`}
+                  >
+                    {document.filename}
+                  </a>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <StatusBadge document={document} />
+                    {canEdit && (
+                      <button
+                        onClick={() => remove(document)}
+                        className="text-xs text-muted hover:text-danger"
+                        aria-label={`Delete ${document.filename}`}
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </div>
+                {(document.status === "queued" || document.status === "processing") && (
+                  <ProgressBar value={document.progress} />
+                )}
+                {document.status === "failed" && document.error && (
+                  <p className="text-xs text-danger">{document.error}</p>
+                )}
+                {document.status === "ready" && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="meta">
+                      {document.kind === "image" ? "photo" : document.kind} · {document.page_count}{" "}
+                      {document.kind === "pptx" ? "slides" : document.page_count === 1 ? "page" : "pages"} ·{" "}
+                      {formatSize(document.size_bytes)}
+                    </p>
+                    {document.transcribed_pages > 0 && (
+                      <Chip tone="tag" className="!py-0.5">
+                        ✎ {document.transcribed_pages} handwritten
+                      </Chip>
+                    )}
+                  </div>
+                )}
               </div>
-              {(document.status === "queued" || document.status === "processing") && (
-                <ProgressBar value={document.progress} />
-              )}
-              {document.status === "failed" && document.error && (
-                <p className="text-xs text-danger">{document.error}</p>
-              )}
-              {document.status === "ready" && (
-                <p className="text-xs text-muted">
-                  {document.kind.toUpperCase()} · {document.page_count} {document.kind === "pptx" ? "slides" : "pages"} ·{" "}
-                  {formatSize(document.size_bytes)}
-                </p>
-              )}
             </li>
           ))}
         </ul>
@@ -150,14 +167,14 @@ export function DocumentsPanel({
 }
 
 function StatusBadge({ document }: { document: NoteDocument }) {
-  const styles = {
-    queued: "text-muted",
-    processing: "text-accent",
-    ready: "text-success",
-    failed: "text-danger",
-  };
-  const labels = { queued: "Queued", processing: "Processing", ready: "Ready", failed: "Failed" };
-  return <span className={`text-xs font-medium ${styles[document.status]}`}>{labels[document.status]}</span>;
+  const dots = { queued: "bg-faint", processing: "bg-amber", ready: "bg-success", failed: "bg-danger" };
+  const labels = { queued: "queued", processing: "reading", ready: "ready", failed: "failed" };
+  return (
+    <span className="label-mono inline-flex items-center gap-1.5 !text-foreground">
+      <span aria-hidden className={`size-1.5 rounded-full ${dots[document.status]}`} />
+      {labels[document.status]}
+    </span>
+  );
 }
 
 function formatSize(bytes: number): string {

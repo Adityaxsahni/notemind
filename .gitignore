@@ -38,3 +38,6 @@ ml/eval/data/*/
 !ml/eval/data/seed/
 ml/mlflow.db
 ml/mlartifacts/
+
+# Load-test output (docs/PERFORMANCE.md)
+loadtest/results/

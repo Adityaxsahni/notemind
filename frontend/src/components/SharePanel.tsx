@@ -35,7 +35,7 @@ export function SharePanel({ collectionId }: { collectionId: string }) {
 
   return (
     <Card className="space-y-3">
-      <h2 className="font-semibold">Share with classmates</h2>
+      <h2 className="display text-3xl">Share with classmates</h2>
       <p className="text-sm text-muted">
         Anyone with the link can read these notes and ask questions. They can&apos;t upload or delete.
       </p>

@@ -5,7 +5,7 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db import get_session
+from app.db import get_session, set_rls_user
 from app.embeddings import Embedder, get_embedder
 from app.llm.gateway import LLMGateway
 from app.llm.providers import LLMProvider, get_llm_provider
@@ -30,6 +30,7 @@ def get_current_user(
     user = session.get(User, user_id) if user_id else None
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    set_rls_user(session, user.id)  # row-level security: this request sees only their rows
     return user
 
 

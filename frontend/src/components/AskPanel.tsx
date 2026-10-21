@@ -69,7 +69,7 @@ export function AskPanel({ collectionId, hasReadyDocuments }: { collectionId: st
 
   return (
     <Card className="space-y-4">
-      <h2 className="font-semibold">Ask your notes</h2>
+      <h2 className="display text-3xl">Ask your notes</h2>
       <form onSubmit={submit} className="space-y-2">
         <textarea
           aria-label="Your question"
@@ -85,7 +85,7 @@ export function AskPanel({ collectionId, hasReadyDocuments }: { collectionId: st
               e.currentTarget.form?.requestSubmit();
             }
           }}
-          className="w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:opacity-60"
+          className="w-full resize-none rounded-xl border border-border bg-surface px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:opacity-60"
         />
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted">Answers come only from your notes, with page citations.</span>
@@ -129,7 +129,7 @@ function AnswerFooter({ collectionId, done }: { collectionId: string; done: Answ
       )}
       {done.citations.length > 0 && (
         <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Sources</h3>
+          <h3 className="label-mono mb-2">Sources</h3>
           <ol className="space-y-1 text-sm">
             {done.citations.map((c) => (
               <li key={c.id} id={`cite-${c.id}`} className="flex flex-wrap items-baseline gap-x-2">

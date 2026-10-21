@@ -20,11 +20,12 @@ export type DocumentStatus = "queued" | "processing" | "ready" | "failed";
 export interface NoteDocument {
   id: string;
   filename: string;
-  kind: "pdf" | "docx" | "pptx";
+  kind: "pdf" | "docx" | "pptx" | "image";
   size_bytes: number;
   status: DocumentStatus;
   progress: number;
   page_count: number | null;
+  transcribed_pages: number; // pages read from handwriting or scans
   error: string | null;
   created_at: string;
 }

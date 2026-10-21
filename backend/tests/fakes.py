@@ -85,3 +85,28 @@ class FakeLLM:
             input_tokens=self.input_tokens,
             output_tokens=self.output_tokens,
         )
+
+
+class FakeVisionLLM:
+    """Scripted transcriber: each page image in a request reads `text` plus its position."""
+
+    def __init__(self) -> None:
+        self.requests: list[LLMRequest] = []
+        self.text = "Handwritten: mitochondria make ATP by oxidative phosphorylation"
+        self.configured = True  # False: as if no API key were set
+        self.error: Exception | None = None
+        self.markers = True  # False: forget the page markers, as models sometimes do
+
+    def stream(self, request: LLMRequest) -> Iterator[LLMEvent]:
+        self.requests.append(request)
+        if self.error is not None:
+            raise self.error
+        pages = [f"{self.text} (image {i})" for i in range(1, len(request.images) + 1)]
+        if self.markers:
+            body = "\n".join(f"=== PAGE {i} ===\n{p}" for i, p in enumerate(pages, start=1))
+        else:
+            body = "\n\n".join(pages)
+        yield TextDelta(body)
+        yield Completion(
+            model="fake-vision", stop_reason="end_turn", input_tokens=1500, output_tokens=300
+        )

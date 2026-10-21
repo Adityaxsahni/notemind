@@ -54,9 +54,9 @@ describe("safeNext", () => {
   it.each([
     ["/c/123", "/c/123"],
     ["/join?token=x", "/join?token=x"],
-    ["https://evil.example", "/"],
-    ["//evil.example", "/"],
-    [null, "/"],
+    ["https://evil.example", "/courses"],
+    ["//evil.example", "/courses"],
+    [null, "/courses"],
   ])("%s -> %s", (input, expected) => {
     expect(safeNext(input)).toBe(expected);
   });

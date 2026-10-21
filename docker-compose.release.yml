@@ -1,0 +1,21 @@
+# Release overlay: run the images CD published to GitHub Container Registry instead of
+# building from source. Used by the CD pipeline's verification job and on a server:
+#
+#   NOTEMIND_TAG=sha-1a2b3c4 docker compose -f docker-compose.yml -f docker-compose.release.yml pull
+#   NOTEMIND_TAG=sha-1a2b3c4 docker compose -f docker-compose.yml -f docker-compose.release.yml up -d --no-build
+#
+# NOTEMIND_TAG defaults to "latest" (the newest build of main).
+x-backend-image: &backend-image
+  image: ghcr.io/adityaxsahni/notemind-backend:${NOTEMIND_TAG:-latest}
+  pull_policy: missing
+
+services:
+  backend:
+    <<: *backend-image
+  worker:
+    <<: *backend-image
+  indexer:
+    <<: *backend-image
+  frontend:
+    image: ghcr.io/adityaxsahni/notemind-frontend:${NOTEMIND_TAG:-latest}
+    pull_policy: missing

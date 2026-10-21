@@ -1,3 +1,0 @@
-# Private study app: nothing here is meant for search engines.
-User-agent: *
-Disallow: /

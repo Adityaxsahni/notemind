@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from sqlalchemy import Engine, create_engine, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
+from sqlalchemy.schema import CreateTable
 
 from app.config import get_settings
 from app.embeddings import Embedder
@@ -62,8 +63,21 @@ def eval_engine() -> Engine:
     engine = create_engine(url)
     with engine.begin() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        # The eval database is a disposable cache. create_all never alters existing tables,
+        # so rebuild it whenever the app's models change.
+        fingerprint = _schema_fingerprint(engine)
+        conn.execute(text("CREATE TABLE IF NOT EXISTS eval_schema (fingerprint text)"))
+        if conn.scalar(text("SELECT fingerprint FROM eval_schema")) != fingerprint:
+            Base.metadata.drop_all(conn)
+            conn.execute(text("DELETE FROM eval_schema"))
+            conn.execute(text("INSERT INTO eval_schema VALUES (:f)"), {"f": fingerprint})
     Base.metadata.create_all(engine)
     return engine
+
+
+def _schema_fingerprint(engine: Engine) -> str:
+    ddl = ";".join(str(CreateTable(table).compile(engine)) for table in Base.metadata.sorted_tables)
+    return hashlib.sha256(ddl.encode()).hexdigest()[:16]
 
 
 COMBINED = "*"  # index key when every course shares one collection

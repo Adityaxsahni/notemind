@@ -1,8 +1,9 @@
 import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy import func, select
 
+from app import audit
 from app.authz import Action, assert_can_access
 from app.deps import CurrentUser, SessionDep
 from app.models import Collection, CollectionMember, Document, Role, User
@@ -71,13 +72,26 @@ def rename_collection(
 
 @router.delete("/{collection_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_collection(
-    collection_id: uuid.UUID, user: CurrentUser, session: SessionDep, storage: StorageDep
+    collection_id: uuid.UUID,
+    user: CurrentUser,
+    session: SessionDep,
+    storage: StorageDep,
+    request: Request,
 ) -> None:
     access = assert_can_access(session, user, collection_id, Action.MANAGE)
     keys = session.scalars(
         select(Document.storage_key).where(Document.collection_id == collection_id)
     ).all()
     session.delete(access.collection)  # documents and pages cascade in the database
+    audit.record(
+        session,
+        "collection.deleted",
+        actor_id=user.id,
+        request=request,
+        target_type="collection",
+        target_id=collection_id,
+        details={"documents": len(keys)},
+    )
     session.commit()
     for key in keys:  # files on disk don't cascade; remove them explicitly
         storage.delete(key)
@@ -103,7 +117,11 @@ def list_members(
 
 @router.delete("/{collection_id}/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_member(
-    collection_id: uuid.UUID, member_id: uuid.UUID, user: CurrentUser, session: SessionDep
+    collection_id: uuid.UUID,
+    member_id: uuid.UUID,
+    user: CurrentUser,
+    session: SessionDep,
+    request: Request,
 ) -> None:
     """Owner removes a member, or a member leaves (member_id == own id)."""
     if member_id == user.id:
@@ -119,4 +137,13 @@ def remove_member(
     if member is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
     session.delete(member)
+    audit.record(
+        session,
+        "member.left" if member_id == user.id else "member.removed",
+        actor_id=user.id,
+        request=request,
+        target_type="collection",
+        target_id=collection_id,
+        details={"member_id": str(member_id)},
+    )
     session.commit()

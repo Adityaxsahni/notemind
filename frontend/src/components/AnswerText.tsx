@@ -30,7 +30,7 @@ export function AnswerText({ text, citations }: { text: string; citations: Citat
             key={i}
             href={citation ? `#cite-${citation.id}` : undefined}
             title={label}
-            className="mx-0.5 inline-flex -translate-y-px items-center rounded bg-accent-soft px-1.5 font-mono text-xs text-accent no-underline"
+            className="mx-0.5 inline-flex -translate-y-px items-center rounded-full bg-accent px-1.5 font-mono text-xs text-accent-foreground no-underline"
           >
             {citation ? `p.${citation.page}` : part.sourceId}
           </a>

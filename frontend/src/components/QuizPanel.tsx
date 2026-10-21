@@ -51,7 +51,7 @@ export function QuizPanel({ collectionId, hasReadyDocuments }: { collectionId: s
 
   return (
     <Card className="space-y-4">
-      <h2 className="font-semibold">Quiz yourself</h2>
+      <h2 className="display text-3xl">Quiz yourself</h2>
       <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
         <div className="min-w-48 flex-1">
           <Input
@@ -68,7 +68,7 @@ export function QuizPanel({ collectionId, hasReadyDocuments }: { collectionId: s
           value={size}
           onChange={(e) => setSize(Number(e.target.value))}
           disabled={!hasReadyDocuments}
-          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+          className="rounded-xl border border-border bg-surface px-3 py-2 text-sm"
         >
           {SIZES.map((n) => (
             <option key={n} value={n}>
@@ -133,7 +133,7 @@ function QuestionCard({
         {question.options.map((option, i) => {
           const isAnswer = i === question.answer;
           const tone = !done
-            ? "border-border hover:border-accent"
+            ? "border-border hover:border-foreground"
             : isAnswer
               ? "border-success text-success"
               : i === picked
@@ -146,7 +146,7 @@ function QuestionCard({
               disabled={done}
               onClick={() => onPick(i)}
               aria-pressed={i === picked}
-              className={`rounded-lg border bg-surface px-3 py-2 text-left text-sm transition ${tone}`}
+              className={`rounded-xl border bg-surface px-3.5 py-2.5 text-left text-sm transition ${tone}`}
             >
               {option}
               {done && isAnswer && <span className="sr-only"> (correct answer)</span>}

@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from app.deps import ACCESS_COOKIE, REFRESH_COOKIE, RedisDep, SessionDep
 from app.models import RefreshToken, User
 from app.rate_limit import client_ip, enforce_rate_limit
-from app.schemas import LoginIn, SignupIn, UserOut
+from app.schemas import FormTokenOut, LoginIn, SignupIn, UserOut
+from app.security.bot import issue_form_token, require_human
 from app.security.passwords import DUMMY_HASH, hash_password, needs_rehash, verify_password
 from app.security.tokens import (
     ACCESS_TOKEN_TTL,
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # Refresh cookie is only sent to /auth/*, so it never travels with ordinary API calls.
 _REFRESH_PATH = "/auth"
 _INVALID_LOGIN = "Invalid email or password"
+SIGNED_IN_COOKIE = "signed_in"
 
 
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
@@ -44,12 +46,23 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str) 
         path=_REFRESH_PATH,
         **common,
     )
+    # Not a credential: lets public pages show "Your courses" instead of "Log in" without an
+    # API call. Readable by scripts on purpose; it carries no information beyond "1".
+    response.set_cookie(
+        SIGNED_IN_COOKIE,
+        "1",
+        max_age=int(REFRESH_TOKEN_TTL.total_seconds()),
+        path="/",
+        secure=True,
+        samesite="strict",
+    )
 
 
 def clear_auth_cookies(response: Response) -> None:
     common = {"httponly": True, "secure": True, "samesite": "strict"}
     response.delete_cookie(ACCESS_COOKIE, path="/", **common)
     response.delete_cookie(REFRESH_COOKIE, path=_REFRESH_PATH, **common)
+    response.delete_cookie(SIGNED_IN_COOKIE, path="/", secure=True, samesite="strict")
 
 
 def _unauthorized() -> JSONResponse:
@@ -83,12 +96,26 @@ def _revoke_family(session: Session, family_id: uuid.UUID) -> None:
     session.commit()
 
 
+@router.get("/form-token", response_model=FormTokenOut)
+def form_token(response: Response) -> FormTokenOut:
+    """A signed timestamp the sign-up and log-in forms send back (see app/security/bot.py)."""
+    response.headers["Cache-Control"] = "no-store"
+    return FormTokenOut(token=issue_form_token())
+
+
 @router.post("/signup", status_code=status.HTTP_201_CREATED, response_model=UserOut)
 def signup(
     body: SignupIn, request: Request, response: Response, session: SessionDep, redis: RedisDep
 ) -> User:
     # Generous per-IP limit: a whole college hostel can share one public IP.
     enforce_rate_limit(redis, "signup", client_ip(request), limit=20, window_seconds=3600)
+    require_human(
+        form="signup",
+        ip=client_ip(request),
+        form_token=body.form_token,
+        honeypot=body.website,
+        captcha_token=body.captcha_token,
+    )
     # TODO(email verification): once added, always return 202 "check your inbox" so signup
     # can't be used to discover which emails are registered.
     user = User(email=body.email.lower(), password_hash=hash_password(body.password))
@@ -113,6 +140,13 @@ def login(
     ip = client_ip(request)
     enforce_rate_limit(redis, "login", f"{ip}:{email}", limit=5, window_seconds=60)
     enforce_rate_limit(redis, "login-ip", ip, limit=50, window_seconds=60)
+    require_human(
+        form="login",
+        ip=ip,
+        form_token=body.form_token,
+        honeypot=body.website,
+        captcha_token=body.captcha_token,
+    )
 
     user = session.scalar(select(User).where(User.email == email))
     if user is None:

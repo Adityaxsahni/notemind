@@ -1,8 +1,9 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import or_, select
 
+from app import audit
 from app.api.auth import clear_auth_cookies
 from app.deps import CurrentUser, RedisDep, SessionDep
 from app.models import Collection, CollectionMember, Document, User
@@ -22,6 +23,7 @@ def get_me(user: CurrentUser) -> User:
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
 def delete_me(
     body: PasswordConfirmIn,
+    request: Request,
     response: Response,
     user: CurrentUser,
     session: SessionDep,
@@ -42,6 +44,16 @@ def delete_me(
         .where(or_(Collection.owner_id == user.id, Document.uploaded_by == user.id))
     ).all()
     session.delete(user)
+    # Kept after the account is gone: proof the erasure request was carried out.
+    audit.record(
+        session,
+        "account.deleted",
+        actor_id=user.id,
+        request=request,
+        target_type="user",
+        target_id=user.id,
+        details={"files": len(keys)},
+    )
     session.commit()
     for key in keys:
         storage.delete(key)

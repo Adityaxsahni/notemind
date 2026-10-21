@@ -4,5 +4,6 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
-  test: { environment: "node" },
+  // Unit tests only; e2e/ holds the Playwright specs (npm run test:e2e).
+  test: { environment: "node", include: ["src/**/*.test.ts"] },
 });

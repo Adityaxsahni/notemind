@@ -1,6 +1,7 @@
 import os
 
 os.environ["ENVIRONMENT"] = "test"  # must be set before app settings are first loaded
+os.environ["BOT_MIN_FILL_SECONDS"] = "0"  # bot-check tests set their own delay
 
 import fakeredis  # noqa: E402
 import pytest  # noqa: E402
@@ -9,10 +10,14 @@ from sqlalchemy import create_engine, text  # noqa: E402
 from sqlalchemy.engine import make_url  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
-from app import models  # noqa: E402, F401
+from app import (
+    models,  # noqa: E402, F401
+    rls,  # noqa: E402
+)
 from app.config import get_settings  # noqa: E402
-from app.db import Base, get_session  # noqa: E402
+from app.db import Base, get_session, use_app_role  # noqa: E402
 from app.embeddings import get_embedder  # noqa: E402
+from app.ingestion.ocr import make_transcriber  # noqa: E402
 from app.ingestion.queue import get_enqueue  # noqa: E402
 from app.ingestion.tasks import index_document, ingest_document  # noqa: E402
 from app.llm.providers import get_llm_provider  # noqa: E402
@@ -20,7 +25,7 @@ from app.main import app  # noqa: E402
 from app.rag.reranker import get_reranker  # noqa: E402
 from app.redis_client import get_redis  # noqa: E402
 from app.storage import LocalStorage, get_storage  # noqa: E402
-from tests.fakes import FakeEmbedder, FakeLLM, FakeReranker  # noqa: E402
+from tests.fakes import FakeEmbedder, FakeLLM, FakeReranker, FakeVisionLLM  # noqa: E402
 
 GOOD_PASSWORD = "correct-horse-battery-42"  # pragma: allowlist secret
 
@@ -50,8 +55,24 @@ def engine():
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        rls.apply(lambda sql: conn.execute(text(sql)))
     yield engine
     engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def app_engine(engine):
+    """Connections as the restricted role the real app uses, so every API test also runs
+    under row-level security. The plain `engine` (table owner) is for inspecting rows."""
+    app_engine = use_app_role(create_engine(engine.url))
+    yield app_engine
+    app_engine.dispose()
+
+
+@pytest.fixture
+def app_db(app_engine, db):
+    return sessionmaker(bind=app_engine, expire_on_commit=False)
 
 
 @pytest.fixture
@@ -84,29 +105,42 @@ def llm():
 
 
 @pytest.fixture
+def vision_llm():
+    return FakeVisionLLM()
+
+
+@pytest.fixture
 def redis():
     return fakeredis.FakeRedis()
 
 
 @pytest.fixture
-def make_client(db, storage, embedder, reranker, llm, redis):
+def make_client(app_db, storage, embedder, reranker, llm, vision_llm, redis):
     """Returns a factory: each call is a separate browser with its own cookie jar."""
 
     def _session():
-        session = db()
+        session = app_db()
         try:
             yield session
         finally:
             session.close()
 
     def _index_inline(document_id):
-        with db() as session:
+        with app_db() as session:
             index_document(session, embedder, document_id)
 
     def _enqueue_inline(document_id):
         # Run ingestion + indexing synchronously so tests see the final document state.
-        with db() as session:
-            ingest_document(session, storage, document_id, index=_index_inline)
+        with app_db() as session:
+            ingest_document(
+                session,
+                storage,
+                document_id,
+                index=_index_inline,
+                transcriber_for=lambda user_id: make_transcriber(
+                    redis, user_id, vision_llm if vision_llm.configured else None
+                ),
+            )
 
     app.dependency_overrides[get_session] = _session
     app.dependency_overrides[get_redis] = lambda: redis
@@ -134,7 +168,14 @@ def client(make_client):
     return make_client()
 
 
+def human(client) -> dict:
+    """The bot-check fields our own sign-up and log-in forms send."""
+    return {"form_token": client.get("/auth/form-token").json()["token"], "website": ""}
+
+
 def signup(client, email, password=GOOD_PASSWORD):
-    response = client.post("/auth/signup", json={"email": email, "password": password})
+    response = client.post(
+        "/auth/signup", json={**human(client), "email": email, "password": password}
+    )
     assert response.status_code == 201, response.text
     return response.json()

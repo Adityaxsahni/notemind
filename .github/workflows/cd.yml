@@ -1,0 +1,172 @@
+name: CD
+
+# Runs after CI passes on main: publish the images, prove the published images work under
+# load, then (once a server is configured) deploy them. See docs/CI_CD.md.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      peak_users:
+        description: Concurrent users in the release load test
+        default: "300"
+      profile:
+        description: Load-test profile (quick ≈ 2 min, full ≈ 11 min)
+        default: quick
+        type: choice
+        options: [quick, full]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-main
+  cancel-in-progress: false  # never interrupt a deploy halfway
+
+env:
+  SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  REGISTRY: ghcr.io/adityaxsahni
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - id: tag
+        run: echo "tag=sha-${SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/notemind-backend:${{ steps.tag.outputs.tag }}
+            ${{ env.REGISTRY }}/notemind-backend:latest
+          labels: org.opencontainers.image.revision=${{ env.SHA }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend
+      - name: Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          # Public values only: they are baked into browser JavaScript.
+          build-args: |
+            BACKEND_URL=http://backend:8000
+            NEXT_PUBLIC_SITE_URL=${{ vars.SITE_URL || 'http://localhost:3000' }}
+            NEXT_PUBLIC_CONTACT_EMAIL=${{ vars.CONTACT_EMAIL || 'privacy@notemind.example' }}
+            NEXT_PUBLIC_TURNSTILE_SITE_KEY=${{ vars.TURNSTILE_SITE_KEY }}
+            FORCE_HTTPS=${{ vars.FORCE_HTTPS || 'false' }}
+          tags: |
+            ${{ env.REGISTRY }}/notemind-frontend:${{ steps.tag.outputs.tag }}
+            ${{ env.REGISTRY }}/notemind-frontend:latest
+          labels: org.opencontainers.image.revision=${{ env.SHA }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  verify:
+    # The exact images just published, as a full stack, under load. Fails the release if any
+    # performance objective in loadtest/notemind.js is missed.
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      NOTEMIND_TAG: ${{ needs.publish.outputs.tag }}
+      COMPOSE: docker compose -f docker-compose.yml -f docker-compose.release.yml -f docker-compose.loadtest.yml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Throwaway configuration
+        run: |
+          {
+            echo "ENVIRONMENT=staging"
+            echo "SECRET_KEY=$(openssl rand -hex 32)"
+            echo "POSTGRES_USER=notemind"
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
+            echo "POSTGRES_DB=notemind"
+          } > .env
+      - name: Start the released stack
+        run: |
+          $COMPOSE pull --quiet backend frontend
+          $COMPOSE up -d --no-build
+          curl -sf --retry 40 --retry-delay 5 --retry-all-errors http://127.0.0.1:8000/health
+          curl -sf --retry 20 --retry-delay 3 --retry-all-errors -o /dev/null http://127.0.0.1:3000/
+      - name: Seed load-test users
+        env:
+          PEAK_USERS: ${{ inputs.peak_users || '300' }}
+        run: |
+          $COMPOSE exec -T backend python - --students "$(( PEAK_USERS * 3 / 10 + 1 ))" < loadtest/seed.py
+      - name: Load test
+        env:
+          PEAK_USERS: ${{ inputs.peak_users || '300' }}
+          PROFILE: ${{ inputs.profile || 'quick' }}
+        run: |
+          mkdir -p loadtest/results && chmod 777 loadtest/results  # k6 runs as a non-root user
+          $COMPOSE run --rm k6
+      - name: Service logs
+        if: failure()
+        run: $COMPOSE logs --tail 200 backend frontend
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: load-test-report
+          path: loadtest/results
+          retention-days: 30
+
+  deploy:
+    # Skipped until a server is configured: repository variable DEPLOY_HOST plus the secrets
+    # listed in docs/CI_CD.md.
+    needs: [publish, verify]
+    if: vars.DEPLOY_HOST != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.SITE_URL }}
+    steps:
+      - name: Pull and restart on the server
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          TARGET: ${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}
+          APP_DIR: ${{ vars.DEPLOY_PATH || '/opt/notemind' }}
+          TAG: ${{ needs.publish.outputs.tag }}
+        run: |
+          mkdir -p ~/.ssh
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key "$TARGET" bash -s -- "$APP_DIR" "$SHA" "$TAG" <<'REMOTE'
+          set -euo pipefail
+          cd "$1"
+          git fetch --quiet origin && git checkout --quiet "$2"
+          export NOTEMIND_TAG="$3"
+          compose="docker compose -f docker-compose.yml -f docker-compose.release.yml"
+          $compose pull --quiet
+          $compose up -d --no-build --remove-orphans
+          REMOTE
+      - name: Site is up
+        run: curl -sf --retry 20 --retry-delay 5 --retry-all-errors -o /dev/null "${{ vars.SITE_URL }}"
