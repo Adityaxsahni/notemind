@@ -35,7 +35,7 @@ class RetrievedChunk:
     page: int
     heading: str | None
     text: str
-    score: float  # reranker logit; higher is more relevant
+    score: float  # reranker logit (higher is more relevant); the RRF score when not reranking
 
 
 @dataclass(frozen=True)
@@ -46,6 +46,27 @@ class RetrievalResult:
     low_confidence: bool
 
 
+@dataclass(frozen=True)
+class RetrievalOptions:
+    """Knobs the app takes from settings and the Phase 7 ablations vary."""
+
+    candidates: int  # per search method, and how many fused results get reranked
+    top_k: int
+    min_score: float
+    use_vector: bool = True
+    use_keyword: bool = True
+    rerank: bool = True  # without it, RRF order is final and confidence can't be judged
+
+    @classmethod
+    def from_settings(cls) -> "RetrievalOptions":
+        settings = get_settings()
+        return cls(
+            candidates=settings.retrieval_candidates,
+            top_k=settings.retrieval_top_k,
+            min_score=settings.retrieval_min_score,
+        )
+
+
 def retrieve(
     session: Session,
     embedder: Embedder,
@@ -54,23 +75,32 @@ def retrieve(
     owner_id: uuid.UUID,
     collection_id: uuid.UUID,
     question: str,
+    options: RetrievalOptions | None = None,
 ) -> RetrievalResult:
-    settings = get_settings()
-    n = settings.retrieval_candidates
+    opts = options or RetrievalOptions.from_settings()
+    n = opts.candidates
     tenant = (Chunk.user_id == owner_id, Chunk.collection_id == collection_id)
     started = time.perf_counter()
 
-    vector_ids = _vector_search(session, embedder.embed_query(question), tenant, n)
-    keyword_ids = _keyword_search(session, question, tenant, n)
-    candidate_ids = reciprocal_rank_fusion([vector_ids, keyword_ids])[:n]
+    vector_ids = (
+        _vector_search(session, embedder.embed_query(question), tenant, n)
+        if opts.use_vector
+        else []
+    )
+    keyword_ids = _keyword_search(session, question, tenant, n) if opts.use_keyword else []
+    fused = reciprocal_rank_fusion([vector_ids, keyword_ids])[:n]
     searched = time.perf_counter()
 
     rows = session.execute(
         select(Chunk, Document.filename)
         .join(Document, Document.id == Chunk.document_id)
-        .where(*tenant, Chunk.id.in_(candidate_ids))
+        .where(*tenant, Chunk.id.in_(fused))
     ).all()
-    scores = reranker.score(question, [with_heading(c.heading, c.text) for c, _ in rows])
+    if opts.rerank:
+        scores = reranker.score(question, [with_heading(c.heading, c.text) for c, _ in rows])
+    else:
+        rank = {chunk_id: i for i, chunk_id in enumerate(fused, start=1)}
+        scores = [1.0 / (RRF_K + rank[c.id]) for c, _ in rows]
     ranked = sorted(zip(rows, scores, strict=True), key=lambda pair: pair[1], reverse=True)
     chunks = [
         RetrievedChunk(
@@ -82,9 +112,9 @@ def retrieve(
             text=chunk.text,
             score=score,
         )
-        for (chunk, filename), score in ranked[: settings.retrieval_top_k]
+        for (chunk, filename), score in ranked[: opts.top_k]
     ]
-    low_confidence = not chunks or chunks[0].score < settings.retrieval_min_score
+    low_confidence = not chunks or (opts.rerank and chunks[0].score < opts.min_score)
 
     # IDs, counts and timings only: never the question or chunk text (CLAUDE.md rule 3).
     logger.info(
@@ -93,7 +123,7 @@ def retrieve(
         collection_id,
         len(vector_ids),
         len(keyword_ids),
-        len(rows),
+        len(rows) if opts.rerank else 0,
         low_confidence,
         (searched - started) * 1000,
         (time.perf_counter() - searched) * 1000,

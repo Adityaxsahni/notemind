@@ -30,3 +30,11 @@ mlruns/
 Thumbs.db
 .vscode/
 .idea/
+
+# Evaluation: rendered corpora, per-question results and private question sets stay local
+ml/eval/build/
+ml/eval/results/
+ml/eval/data/*/
+!ml/eval/data/seed/
+ml/mlflow.db
+ml/mlartifacts/

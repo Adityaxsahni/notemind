@@ -44,6 +44,18 @@ cd backend && uv run pytest -m llm      # real LLM API (needs LLM_API_KEY, costs
 cd frontend && npm test && npm run lint && npm run typecheck
 ```
 
+## Evaluation
+
+Retrieval and answer quality are measured on labelled question sets in `ml/eval/`; results,
+ablations and the recommended configuration are in [ml/eval/REPORT.md](ml/eval/REPORT.md).
+CI fails if baseline retrieval on the seed set drops below its thresholds.
+
+```bash
+uv run --project backend --group eval python -m ml.eval.run retrieval --set seed   # free
+uv run --project backend python -m ml.eval.run answers --set seed --dry-run        # free
+uv run --project backend python -m ml.eval.run answers --set seed --yes            # uses LLM credit
+```
+
 ## Development
 
 ```bash

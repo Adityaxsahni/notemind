@@ -1,0 +1,81 @@
+1 Introduction to Database Systems
+A database management system (DBMS) is software that stores data and lets many users query and update it safely at the same time. Before DBMSs, applications kept data in separate files. File-based systems suffered from data redundancy, inconsistent copies of the same fact, difficult ad-hoc queries, and no protection when two programs updated the same file concurrently.
+
+A DBMS separates how data is described from how it is stored. This separation is called data independence. Physical data independence means the internal storage (files, indexes, compression) can change without changing the conceptual schema or the applications. Logical data independence means the conceptual schema can change, for example by adding a column, without rewriting the external views that applications use. Logical data independence is harder to achieve than physical data independence.
+
+The ANSI/SPARC three-schema architecture describes three levels. The external level contains the views that individual users or applications see. The conceptual level describes the whole database for the community of users: entities, relationships and constraints, without storage details. The internal level describes how records are physically stored on disk. Mappings between levels are what make data independence possible.
+
+The people involved include the database administrator (DBA), who controls the schema, grants access and tunes performance; application programmers; and end users who run queries. A data dictionary, also called the system catalog, stores metadata: table definitions, constraints, users and privileges.
+
+Languages: a data definition language (DDL) creates and alters schema objects, for example CREATE TABLE. A data manipulation language (DML) retrieves and modifies data, for example SELECT, INSERT, UPDATE and DELETE. SQL combines both. A data control language (DCL) handles permissions with GRANT and REVOKE.
+===
+2 The Relational Model
+In the relational model data is organised into relations, which are drawn as tables. Each row is a tuple and each column is an attribute. The set of allowed values for an attribute is its domain. The number of attributes is the degree of the relation, and the number of tuples is its cardinality. A relation is a set, so it has no duplicate tuples and the order of rows carries no meaning.
+
+Keys identify tuples. A superkey is any set of attributes whose values are unique for every tuple. A candidate key is a minimal superkey: removing any attribute makes it stop being unique. The primary key is the candidate key chosen by the designer to identify tuples; it may not contain NULL values, which is the entity integrity constraint. The remaining candidate keys are called alternate keys.
+
+A foreign key is a set of attributes in one relation that refers to the primary key of another relation. Referential integrity requires every non-NULL foreign key value to match an existing primary key value in the referenced relation. When a referenced row is deleted, the DBMS can reject the delete (RESTRICT), delete the referencing rows too (CASCADE), or set the foreign key to NULL (SET NULL).
+
+Relational algebra is the formal query language behind SQL. Selection (sigma) keeps the tuples that satisfy a condition. Projection (pi) keeps chosen attributes and removes duplicate tuples. Union, set difference and Cartesian product combine relations. The natural join combines tuples from two relations that agree on all common attributes, and a theta join uses an arbitrary condition. Rename (rho) gives a relation or attribute a new name. Selection and projection are unary operators; join and product are binary operators.
+
+Relational calculus is the declarative counterpart: tuple relational calculus describes which tuples to return rather than how to compute them. Codd's theorem states that relational algebra and safe relational calculus have the same expressive power.
+===
+3.1 Functional Dependencies and Normal Forms
+A functional dependency X -> Y holds when any two tuples that agree on attributes X also agree on attributes Y. For example, in Student(roll_no, name, dept, hod), roll_no -> name and dept -> hod. Functional dependencies come from the meaning of the data, not from one particular table instance.
+
+Armstrong's axioms derive every dependency implied by a given set. Reflexivity: if Y is a subset of X then X -> Y. Augmentation: if X -> Y then XZ -> YZ. Transitivity: if X -> Y and Y -> Z then X -> Z. Useful derived rules are union, decomposition and pseudo-transitivity. The closure of an attribute set X, written X+, is every attribute functionally determined by X; if X+ contains all attributes, X is a superkey.
+
+Normalization removes redundancy that causes update anomalies. An insertion anomaly happens when a fact cannot be stored without an unrelated fact, a deletion anomaly when deleting one fact loses another, and an update anomaly when one change must be repeated in many rows.
+
+First normal form (1NF) requires every attribute value to be atomic: no repeating groups and no multi-valued attributes such as a list of phone numbers in one cell.
+
+Second normal form (2NF) requires 1NF and no partial dependency: no non-prime attribute may depend on only part of a composite candidate key. In Enrolment(roll_no, course_id, student_name, grade) with key (roll_no, course_id), student_name depends only on roll_no, which is a partial dependency, so the table is not in 2NF. The fix is to move student_name into a separate Student table keyed by roll_no. A relation whose candidate keys all have a single attribute is automatically in 2NF.
+===
+3.2 Third Normal Form and BCNF
+Third normal form (3NF) requires 2NF and no transitive dependency of a non-prime attribute on a candidate key. In Student(roll_no, dept, hod), roll_no -> dept and dept -> hod, so hod depends on the key only through dept. Storing hod in every student row repeats it, and changing a department's head means updating many rows. Decomposing into Student(roll_no, dept) and Department(dept, hod) removes the transitive dependency. Equivalently, a relation is in 3NF if for every non-trivial dependency X -> A, either X is a superkey or A is a prime attribute, meaning A is part of some candidate key.
+
+Boyce-Codd normal form (BCNF) is stricter: for every non-trivial functional dependency X -> Y, X must be a superkey. In other words every determinant is a candidate key. Every BCNF relation is in 3NF, but not every 3NF relation is in BCNF. The classic counterexample is Teaches(student, course, teacher) with teacher -> course and (student, course) -> teacher: teacher is a determinant but not a superkey.
+
+Decompositions must be lossless: joining the pieces must give back exactly the original relation with no spurious tuples. A binary decomposition into R1 and R2 is lossless if the common attributes form a superkey of R1 or of R2. A decomposition is dependency preserving if every original dependency can be checked inside a single piece without joins.
+
+The trade-off: the 3NF synthesis algorithm always produces a decomposition that is both lossless and dependency preserving. BCNF decomposition is always lossless, but it may not preserve dependencies, which is why designers sometimes stop at 3NF. Higher normal forms exist: fourth normal form (4NF) removes multi-valued dependencies.
+===
+4 Transactions and ACID
+A transaction is a sequence of reads and writes that the DBMS treats as one logical unit of work, such as transferring money between two accounts. Transactions guarantee the ACID properties.
+
+Atomicity: either all operations of the transaction take effect or none do. If a transfer debits one account and the system crashes before the credit, the debit must be undone. Consistency: a transaction that starts in a consistent state leaves the database in a consistent state, respecting integrity constraints such as balances never going negative. Isolation: concurrent transactions must not see each other's intermediate results; the outcome should equal some serial order. Durability: once a transaction commits, its changes survive crashes and power failures.
+
+A transaction moves through states: active while it executes, partially committed after its final statement, committed once its changes are durable, failed when it cannot proceed, and aborted after its changes are rolled back. After an abort, the system can restart the transaction or kill it.
+
+The recovery manager provides atomicity and durability using a log. Write-ahead logging (WAL) requires that the log record describing a change is written to stable storage before the changed data page itself is written to disk. Each update record stores the transaction id, the data item, the old value and the new value. After a crash, the recovery manager redoes the updates of committed transactions using new values and undoes the updates of uncommitted transactions using old values. ARIES is a widely used recovery algorithm with analysis, redo and undo passes.
+
+Checkpoints limit how much log must be scanned during recovery: at a checkpoint, the system flushes dirty pages and records which transactions are active. Shadow paging is an alternative to logging that keeps a copy of the page table and switches to the new copy atomically at commit.
+===
+5 Concurrency Control
+A schedule interleaves the operations of concurrent transactions. A schedule is serial if transactions run one after another. Two operations conflict if they belong to different transactions, access the same data item, and at least one of them is a write. A schedule is conflict serializable if swapping non-conflicting operations can turn it into a serial schedule. To test this, draw a precedence graph with an edge Ti -> Tj when an operation of Ti conflicts with and comes before an operation of Tj. The schedule is conflict serializable exactly when the precedence graph has no cycle.
+
+Two-phase locking (2PL) guarantees conflict serializability. Each transaction has a growing phase, in which it may acquire locks but not release any, followed by a shrinking phase, in which it may release locks but not acquire new ones. Shared locks allow reading and exclusive locks allow writing. Strict 2PL holds all exclusive locks until the transaction commits or aborts, which prevents cascading rollbacks. Rigorous 2PL holds all locks until commit.
+
+2PL does not prevent deadlock. A deadlock occurs when transactions wait for each other in a cycle. The DBMS detects deadlocks with a wait-for graph and breaks a cycle by aborting a victim transaction. Prevention schemes use timestamps: in wait-die, an older transaction waits for a younger one but a younger transaction requesting a lock held by an older one is aborted; in wound-wait, an older transaction wounds (aborts) the younger holder, while a younger transaction waits.
+
+SQL isolation levels trade correctness for concurrency. Read uncommitted allows dirty reads of uncommitted data. Read committed prevents dirty reads but allows non-repeatable reads, where reading the same row twice gives different values. Repeatable read prevents non-repeatable reads but can still show phantoms, new rows that appear in a repeated range query. Serializable prevents all three anomalies. Multiversion concurrency control (MVCC) lets readers see a snapshot so that readers do not block writers.
+===
+6 Indexing
+An index speeds up lookups on a search key at the cost of extra storage and slower inserts and updates. A primary or clustered index determines the physical order of records in the file, so a table can have at most one clustered index. A secondary (non-clustered) index has its own order and points to records stored elsewhere. A dense index has an entry for every search key value, while a sparse index has entries for only some values, typically one per block, and works only on sorted files.
+
+The B+ tree is the standard index structure in relational databases. It is balanced: every path from the root to a leaf has the same length, so lookups cost about log base f of N block reads, where f is the fanout, the number of children per node. Internal nodes contain only keys and child pointers to guide the search. All records or record pointers live in the leaves. Leaf nodes are linked together in key order, so a range query finds the first matching leaf and then follows the links through consecutive leaves without returning to the root. Nodes are kept at least half full; inserts split full nodes and deletes merge or redistribute underfull nodes. Because nodes are as large as a disk block, a B+ tree of height three or four can index millions of records.
+
+A B tree, unlike a B+ tree, stores records in internal nodes too, which makes range scans less efficient.
+
+Hash indexes compute the bucket from a hash function on the key. They answer equality queries in close to one block access, but they cannot support range queries because hashing destroys key order. Static hashing suffers from overflow chains as the file grows; extendible hashing and linear hashing grow the number of buckets dynamically.
+
+Composite indexes on (a, b) help queries that filter on a, or on a and b, but not queries that filter only on b. A covering index contains every column a query needs, so the table itself is never read.
+===
+7 Query Processing
+Query processing has three steps: the parser checks the SQL and translates it into relational algebra, the optimizer chooses an efficient execution plan, and the execution engine evaluates the plan. Cost is usually measured in the number of disk block transfers and seeks, because disk access dominates CPU time.
+
+Selection can use a linear scan, which reads every block, or an index scan when an index exists on the selection attribute. For a selection on a key attribute with a B+ tree index, the cost is the height of the tree plus one block.
+
+Join algorithms. The nested loop join compares every tuple of the outer relation with every tuple of the inner relation, which is simple but expensive. The block nested loop join reads the outer relation one block at a time and scans the inner relation once per outer block, so it is much cheaper than the tuple-at-a-time version; the smaller relation should be the outer one. An indexed nested loop join uses an index on the inner relation's join attribute. The sort-merge join sorts both relations on the join attribute and merges them in one pass, and it is efficient when the inputs are already sorted. The hash join partitions both relations with the same hash function; in the build phase it builds an in-memory hash table on the smaller relation, and in the probe phase it scans the larger relation and probes the table. Hash join works only for equi-joins.
+
+The optimizer applies equivalence rules to rewrite expressions. Pushing selections down below joins shrinks intermediate results early, and pushing projections down removes unneeded attributes. Join order matters: joins are commutative and associative, so the optimizer uses statistics such as relation sizes and the number of distinct values to estimate the cost of different orders and picks the cheapest plan, often with dynamic programming over left-deep join trees.

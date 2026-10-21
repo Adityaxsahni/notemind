@@ -1,0 +1,77 @@
+Processes and Threads
+A process is a program in execution: code, data, heap, stack and CPU state.
+Each process has its own address space; processes are isolated from each other.
+A thread is a unit of execution inside a process. Threads of one process share code, data and open files but each has its own stack and registers.
+Creating and switching threads is cheaper than creating and switching processes.
+Notes: User-level threads are managed by a library without kernel involvement, so one blocking system call can block the whole process. Kernel-level threads are scheduled by the OS individually.
+===
+Process States and the PCB
+States: new, ready, running, waiting (blocked), terminated.
+Ready -> running when the scheduler dispatches the process; running -> waiting on an I/O request; waiting -> ready when the I/O completes; running -> ready on a timer interrupt.
+The Process Control Block (PCB) stores the process id, state, program counter, CPU registers, scheduling information, memory-management information and open files.
+A context switch saves the running process's state into its PCB and loads the next process's state. Context switch time is pure overhead.
+===
+CPU Scheduling: FCFS and SJF
+First-Come, First-Served (FCFS) runs processes in arrival order. It is non-preemptive and simple, but suffers from the convoy effect: short processes wait behind one long CPU-bound process.
+Shortest-Job-First (SJF) picks the process with the smallest next CPU burst and gives the minimum average waiting time for a set of processes.
+The preemptive version of SJF is Shortest-Remaining-Time-First (SRTF).
+SJF needs the length of the next burst, which is unknown; it is estimated with exponential averaging of previous bursts.
+Notes: Turnaround time = completion time - arrival time. Waiting time = turnaround time - burst time. Response time = time of first run - arrival time.
+===
+Round Robin and Priority Scheduling
+Round Robin (RR) gives each process a time quantum, then preempts it and moves it to the back of the ready queue.
+If the quantum is very large, RR behaves like FCFS; if it is very small, context-switch overhead dominates. A common rule of thumb: 80% of CPU bursts should be shorter than the quantum.
+Priority scheduling runs the highest-priority process first and can be preemptive or non-preemptive.
+Problem: starvation, where low-priority processes never run.
+Solution: aging, which gradually increases the priority of processes that have waited a long time.
+Multilevel feedback queues move processes between queues based on their CPU usage.
+===
+Synchronization and the Critical-Section Problem
+A race condition occurs when the result depends on the order in which concurrent threads access shared data, for example two threads incrementing the same counter.
+The critical section is the code that accesses shared data.
+A solution must satisfy three requirements:
+Mutual exclusion: at most one process is in its critical section at a time.
+Progress: if no process is in the critical section, the choice of who enters next cannot be postponed indefinitely.
+Bounded waiting: there is a limit on how many times other processes can enter before a waiting process gets its turn.
+Notes: Peterson's solution solves the critical-section problem for two processes using a turn variable and two flag variables. It may fail on modern hardware that reorders memory operations.
+===
+Semaphores and Mutexes
+A semaphore S is an integer accessed only through two atomic operations: wait (P), which decrements S and blocks if the result is negative, and signal (V), which increments S and wakes a waiting process.
+A binary semaphore takes only values 0 and 1 and behaves like a lock. A counting semaphore controls access to a resource with several instances, such as a pool of 5 printers.
+A mutex is a lock owned by the thread that acquired it; only the owner may release it.
+Busy waiting with a spinlock wastes CPU but avoids a context switch, so spinlocks suit very short critical sections on multiprocessors.
+Classic problems: bounded buffer (producer-consumer), readers-writers, dining philosophers.
+===
+Deadlocks
+A deadlock is a set of processes each waiting for a resource held by another process in the set.
+Four necessary conditions (Coffman conditions) must all hold: mutual exclusion, hold and wait, no preemption, circular wait.
+Deadlock prevention breaks one of the conditions, for example by ordering resources to prevent circular wait.
+Deadlock avoidance uses the Banker's algorithm: grant a request only if the system stays in a safe state, where some order exists in which every process can finish.
+Detection and recovery: build a resource-allocation graph, look for cycles, then abort a process or preempt resources.
+Notes: The Banker's algorithm needs each process to declare its maximum demand in advance, which limits its practical use.
+===
+Memory Management and Paging
+Paging divides physical memory into fixed-size frames and logical memory into pages of the same size.
+A logical address is split into a page number and an offset; the page table maps page numbers to frame numbers.
+Paging removes external fragmentation but causes internal fragmentation in the last page of a process.
+Segmentation divides memory into variable-size logical segments (code, stack, heap) and suffers from external fragmentation.
+The Translation Lookaside Buffer (TLB) is a small, fast associative cache of recent page-table entries.
+Effective access time = hit ratio x (TLB time + memory time) + miss ratio x (TLB time + 2 x memory time).
+===
+Virtual Memory and Page Replacement
+Virtual memory lets a process run without all of its pages in physical memory.
+Demand paging loads a page only when it is first accessed. Accessing a page that is not in memory causes a page fault, and the OS loads the page from disk.
+When no frame is free, a page replacement algorithm chooses a victim:
+FIFO evicts the oldest page and can suffer from Belady's anomaly: more frames can cause more page faults.
+Optimal (OPT) evicts the page used farthest in the future; it gives the fewest faults but needs future knowledge, so it is used as a benchmark.
+LRU evicts the least recently used page and does not suffer from Belady's anomaly.
+Thrashing happens when processes spend more time paging than executing because they do not have enough frames for their working set.
+===
+File Systems
+A file system organises data on disk into files and directories.
+An inode stores a file's metadata (owner, permissions, size, timestamps) and pointers to its data blocks, but not the file name; names live in directory entries.
+Allocation methods:
+Contiguous allocation stores a file in consecutive blocks: fast sequential and direct access, but external fragmentation.
+Linked allocation chains blocks with pointers: no external fragmentation, but slow direct access. FAT keeps the chain in a table.
+Indexed allocation keeps all block pointers in an index block, supporting direct access without external fragmentation.
+Notes: Unix inodes use 12 direct pointers plus single, double and triple indirect pointers so that small files are fast and large files are still possible.

@@ -78,3 +78,36 @@ jobs:
       - run: npm run build
       - name: Dependency vulnerability scan (production dependencies)
         run: npm audit --omit=dev --audit-level=high
+
+  eval-regression:
+    # Retrieval quality gate: the seed question set through the real models and pgvector.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: notemind
+          POSTGRES_PASSWORD: ci-only-password  # pragma: allowlist secret
+          POSTGRES_DB: notemind
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U notemind" --health-interval 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://notemind:ci-only-password@127.0.0.1:5432/notemind  # pragma: allowlist secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Cache embedding and reranker models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          # Bump when the pinned revisions in app/config.py change.
+          key: hf-bge-small-5c38ec7-minilm-233902d
+      - run: uv sync --frozen --project backend
+      - name: Eval unit tests
+        run: uv run --project backend pytest -q -p no:cacheprovider ml/eval/tests -c /dev/null --rootdir .
+      - name: Seed-set retrieval must not regress
+        run: >
+          uv run --project backend python -m ml.eval.run retrieval --set seed --only baseline
+          --no-tracking --min recall@6=0.95 --min mrr=0.9 --min refusal_recall=0.7
+          --max false_refusal=0.05

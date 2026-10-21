@@ -41,6 +41,9 @@ dev = [
     "bandit>=1.7",
     "fakeredis>=2.26",
 ]
+eval = [
+    "mlflow>=3.17.1",
+]
 
 [tool.uv]
 package = false

@@ -1,0 +1,60 @@
+Supervised Learning Basics
+In supervised learning a model learns a mapping from inputs to labelled outputs. Regression predicts a continuous value such as a house price; classification predicts a discrete class such as spam or not spam.
+
+Data is split into a training set used to fit the model, a validation set used to tune hyperparameters and choose between models, and a test set used once at the end to estimate performance on unseen data. Using the test set for tuning leaks information and gives an optimistic estimate. k-fold cross-validation splits the data into k folds, trains on k - 1 folds and validates on the remaining fold, rotating k times, and averages the scores; it is useful when data is scarce.
+
+Overfitting means the model fits noise in the training data: training error is low but validation error is high. Underfitting means the model is too simple to capture the pattern, so both errors are high.
+
+The bias-variance trade-off explains this. Bias is error from wrong assumptions, such as fitting a straight line to curved data; high bias causes underfitting. Variance is error from sensitivity to the particular training sample; high variance causes overfitting. Increasing model complexity lowers bias but raises variance. The expected test error decomposes into bias squared plus variance plus irreducible noise. More training data reduces variance but does not reduce bias.
+===
+Linear and Logistic Regression
+Linear regression models the output as a weighted sum of features plus a bias term: y = w . x + b. It is trained by minimising the mean squared error (MSE), the average of the squared differences between predictions and targets. The normal equation gives a closed-form solution, but it requires inverting a matrix, which is expensive with many features.
+
+Gradient descent instead updates the weights step by step in the direction of the negative gradient: w <- w - alpha * gradient, where alpha is the learning rate. If alpha is too large the updates overshoot and the loss can diverge; if it is too small, training is very slow. Batch gradient descent uses the whole dataset per step, stochastic gradient descent (SGD) uses one example, and mini-batch gradient descent uses a small batch, which is the usual choice. Feature scaling, such as standardising each feature to zero mean and unit variance, helps gradient descent converge faster.
+
+Logistic regression is a classification model despite its name. It passes the linear score through the sigmoid function, sigma(z) = 1 / (1 + e^-z), which maps any real number into (0, 1) so the output can be read as a probability. Predictions use a threshold, usually 0.5. It is trained by minimising the binary cross-entropy (log loss) rather than MSE, because cross-entropy is convex for logistic regression and penalises confident wrong predictions heavily. The decision boundary of logistic regression is linear in the features. For more than two classes, softmax regression generalises it.
+===
+Regularization
+Regularization reduces overfitting by discouraging overly complex models. It adds a penalty on the size of the weights to the training loss, scaled by a hyperparameter lambda. A larger lambda means a stronger penalty and a simpler model; lambda is chosen with validation data.
+
+L2 regularization, used in ridge regression, adds lambda times the sum of squared weights. It shrinks all weights smoothly towards zero but rarely makes them exactly zero. It is also called weight decay in neural networks.
+
+L1 regularization, used in lasso regression, adds lambda times the sum of absolute weights. It drives many weights to exactly zero, producing a sparse model, so it also performs feature selection. Elastic net combines the L1 and L2 penalties.
+
+Other techniques: early stopping halts training when validation error starts to rise even though training error keeps falling. Dropout, used in neural networks, randomly sets a fraction of neuron outputs to zero during training (for example with probability 0.5), which prevents neurons from co-adapting; at test time all neurons are used and outputs are scaled accordingly. Data augmentation creates modified copies of training examples, such as flipped or cropped images, to enlarge the training set.
+===
+Evaluation Metrics for Classification
+Accuracy is the fraction of correct predictions. It is misleading for imbalanced classes: if 99% of transactions are legitimate, a model that always predicts legitimate has 99% accuracy but detects no fraud.
+
+The confusion matrix counts true positives (TP), false positives (FP), true negatives (TN) and false negatives (FN).
+
+Precision = TP / (TP + FP): of the items predicted positive, how many really are positive. High precision matters when false positives are costly, such as marking a real email as spam.
+
+Recall (sensitivity, true positive rate) = TP / (TP + FN): of the real positives, how many were found. High recall matters when missing a positive is costly, such as failing to detect a disease.
+
+The F1 score is the harmonic mean of precision and recall: F1 = 2 x precision x recall / (precision + recall). It is high only when both are high.
+
+Changing the classification threshold trades precision against recall. The ROC curve plots the true positive rate against the false positive rate FP / (FP + TN) at every threshold. The area under the curve (AUC) summarises it: 0.5 is random guessing and 1.0 is a perfect ranking. For heavily imbalanced data the precision-recall curve is more informative than the ROC curve.
+===
+Decision Trees and Ensembles
+A decision tree splits the data on one feature at a time, choosing the split that makes the child nodes as pure as possible. Impurity is measured with entropy, H = - sum of p log2 p over the classes, or with Gini impurity, 1 - sum of p squared. Information gain is the parent's entropy minus the weighted average entropy of the children; ID3 chooses the split with the highest information gain. Deep trees overfit, so trees are limited with a maximum depth or a minimum number of samples per leaf, or pruned after training.
+
+Ensembles combine many models. Bagging (bootstrap aggregating) trains each model on a bootstrap sample drawn with replacement and averages their predictions, which reduces variance. A random forest is bagging of decision trees with an extra twist: at each split only a random subset of features is considered, which decorrelates the trees. The examples left out of a bootstrap sample (out-of-bag examples) give a free validation estimate.
+
+Boosting trains models sequentially, each one focusing on the mistakes of the previous ones, which mainly reduces bias. AdaBoost increases the weights of misclassified examples after each round. Gradient boosting fits each new tree to the residual errors (the negative gradient of the loss) of the current ensemble; XGBoost and LightGBM are popular implementations. Boosting is more prone to overfitting noisy labels than bagging.
+===
+Neural Networks
+A perceptron computes a weighted sum of its inputs and applies a step function; a single perceptron can only learn linearly separable functions, so it cannot learn XOR. A multilayer perceptron stacks layers of neurons with non-linear activation functions between them, which lets it approximate complex functions.
+
+Activation functions: the sigmoid squashes values into (0, 1) but saturates for large inputs, where its gradient is nearly zero; in deep networks this causes the vanishing gradient problem. The tanh function is zero-centred but also saturates. ReLU, max(0, x), does not saturate for positive inputs and is cheap to compute, so it is the default for hidden layers; its weakness is dying ReLUs, neurons that output zero for every input. Leaky ReLU uses a small slope for negative inputs to avoid this. The output layer for multi-class classification uses softmax, which turns scores into probabilities that sum to 1, together with the cross-entropy loss.
+
+Training uses backpropagation: a forward pass computes the outputs and the loss, then a backward pass applies the chain rule layer by layer to compute the gradient of the loss with respect to every weight, and an optimizer such as SGD with momentum or Adam updates the weights. Weights are initialised randomly (for example with He or Xavier initialization) to break symmetry; if all weights started equal, every neuron in a layer would learn the same thing. Batch normalization normalises layer inputs within each mini-batch and stabilises and speeds up training.
+===
+k-Means Clustering
+k-means is an unsupervised algorithm that partitions unlabelled data into k clusters. It repeats two steps until the assignments stop changing: assign each point to the nearest centroid, then move each centroid to the mean of the points assigned to it. Each iteration does not increase the within-cluster sum of squared distances, so the algorithm always converges, but only to a local optimum that depends on the starting centroids.
+
+Initialisation matters. k-means++ chooses the first centroid at random and each next centroid with probability proportional to its squared distance from the nearest centroid already chosen, which spreads the centroids out and usually gives better results. Running the algorithm several times and keeping the best result also helps.
+
+Choosing k: the elbow method plots the within-cluster sum of squares against k and picks the point where adding clusters stops giving a large improvement. The silhouette score compares how close each point is to its own cluster versus the nearest other cluster; values near 1 indicate well-separated clusters.
+
+Limitations: k-means assumes roughly spherical clusters of similar size, is sensitive to outliers because it uses means, and requires features on comparable scales, so features are standardised first. DBSCAN, a density-based method, can find clusters of arbitrary shape and marks outliers as noise.

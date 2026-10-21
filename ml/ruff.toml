@@ -1,0 +1,8 @@
+# Same rules as the backend; tests may use assert.
+extend = "../backend/pyproject.toml"
+
+[lint.isort]
+known-first-party = ["app", "ml"]
+
+[lint.per-file-ignores]
+"eval/tests/**" = ["S101", "E501"]

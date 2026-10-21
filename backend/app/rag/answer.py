@@ -125,6 +125,10 @@ def prepare_answer(
 
 
 def build_user_prompt(question: str, sources: dict[str, RetrievedChunk]) -> str:
+    return f"{render_sources(sources)}\n\n<question>{html.escape(question, quote=False)}</question>"
+
+
+def render_sources(sources: dict[str, RetrievedChunk]) -> str:
     blocks = []
     for source_id, chunk in sources.items():
         attrs = (
@@ -133,12 +137,7 @@ def build_user_prompt(question: str, sources: dict[str, RetrievedChunk]) -> str:
         if chunk.heading:
             attrs += f' heading="{html.escape(chunk.heading)}"'
         blocks.append(f"<source {attrs}>\n{html.escape(chunk.text, quote=False)}\n</source>")
-    return (
-        "<sources>\n"
-        + "\n".join(blocks)
-        + "\n</sources>\n\n"
-        + f"<question>{html.escape(question, quote=False)}</question>"
-    )
+    return "<sources>\n" + "\n".join(blocks) + "\n</sources>"
 
 
 def _generate(

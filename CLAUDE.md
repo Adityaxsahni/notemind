@@ -33,6 +33,11 @@ questions and get answers with page-level citations, and generate quizzes from t
 - `uv run alembic revision --autogenerate -m "msg"` / `uv run alembic upgrade head`
 - From repo root: `docker compose up --build` — full stack (UI on http://localhost:3000)
 - From `frontend/`: `npm run dev`, `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`
+- From repo root (needs the compose Postgres; uses its own `notemind_eval` database):
+  `uv run --project backend --group eval python -m ml.eval.run retrieval --set seed` —
+  retrieval ablations (free, rewrites tables in `ml/eval/REPORT.md`);
+  `... run answers --set seed --dry-run` (free) or `--yes` (spends LLM credit);
+  `uv run --project backend pytest ml/eval/tests` — eval unit tests
 
 ## Conventions
 - Type hints everywhere; Pydantic models validate every request body and query param
