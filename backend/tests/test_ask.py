@@ -194,8 +194,17 @@ def test_rejected_request_does_not_consume_budget(alice, cid, redis, monkeypatch
 def test_llm_outage_before_output_is_an_error_event_and_free(alice, cid, llm, redis):
     llm.fail_after = 0
     parsed = events(ask(alice, cid))
-    assert parsed == [("error", {"message": UNAVAILABLE})]
+    assert [name for name, _ in parsed] == ["sources", "error"]
+    assert parsed[-1] == ("error", {"message": UNAVAILABLE})
     assert tokens_used_today(redis) == 0
+
+
+def test_sources_are_sent_before_the_model_writes(alice, cid):
+    parsed = events(ask(alice, cid))
+    name, data = parsed[0]
+    assert name == "sources"
+    assert data["sources"] and {"document_title", "page"} <= set(data["sources"][0])
+    assert parsed[1][0] == "token"
 
 
 def test_llm_failure_mid_answer_keeps_the_budget_hold(alice, cid, llm, redis):

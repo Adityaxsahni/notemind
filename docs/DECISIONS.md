@@ -32,3 +32,5 @@ streaming, worker isolation…) are recorded with alternatives in
 | 2026-10-21 | **Typed PDF pages set in math fonts are transcribed from the image** (into LaTeX), optional: without the vision model they keep their text | Parse the PDF's math fonts ourselves | Text extraction flattens equations ("at2" for at²); the vision model reconstructs them exactly |
 | 2026-10-21 | **Answer cache keyed on the prompt** | Flush on deploy | A new answer style shows up at once instead of after 24 hours |
 | 2026-10-21 | **nginx re-resolves container names** (`resolver 127.0.0.11`, `server … resolve`) | Restart the edge after every deploy | A recreated backend got a new address and every API call returned 502 |
+| 2026-10-21 | **Sources sent before the answer**, with a live "writing your answer" timer | Spinner until the first token | Gemini's free tier took 20–45 s to start; a blank spinner looked like a broken app |
+| 2026-10-21 | **Fallback models** (`LLM_FALLBACK_MODELS`), only before any text is written | Retry the same model | Free-tier outages (503) and quotas (429) are per model; switching mid-answer would splice two answers |

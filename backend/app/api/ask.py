@@ -9,7 +9,14 @@ from fastapi.responses import StreamingResponse
 from app.authz import Action, assert_can_access
 from app.deps import CurrentUser, EmbedderDep, LLMGatewayDep, RedisDep, RerankerDep, SessionDep
 from app.llm.gateway import BudgetExceeded, LLMNotConfigured
-from app.rag.answer import AnswerDone, AnswerError, AnswerEvent, AnswerText, prepare_answer
+from app.rag.answer import (
+    AnswerDone,
+    AnswerError,
+    AnswerEvent,
+    AnswerSources,
+    AnswerText,
+    prepare_answer,
+)
 from app.rate_limit import enforce_rate_limit
 from app.schemas import AskIn
 
@@ -75,7 +82,9 @@ def ask(
 
 def _sse(events: Iterator[AnswerEvent]) -> Iterator[str]:
     for event in events:
-        if isinstance(event, AnswerText):
+        if isinstance(event, AnswerSources):
+            name, data = "sources", asdict(event)
+        elif isinstance(event, AnswerText):
             name, data = "token", {"text": event.text}
         elif isinstance(event, AnswerDone):
             name, data = "done", asdict(event)

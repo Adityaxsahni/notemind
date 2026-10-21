@@ -1,17 +1,17 @@
 "use client";
 
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { ApiError, ask, documentFileUrl } from "@/lib/api";
 import { useApiErrorHandler } from "@/lib/auth";
-import type { AnswerDone } from "@/lib/types";
+import type { AnswerDone, SourceRef } from "@/lib/types";
 
 import { AnswerText } from "./AnswerText";
 import { Alert, Button, Card, Spinner } from "./ui";
 
 type State =
   | { phase: "idle" }
-  | { phase: "streaming"; text: string }
+  | { phase: "streaming"; text: string; sources: SourceRef[] | null; startedAt: number }
   | { phase: "done"; text: string; done: AnswerDone }
   | { phase: "error"; message: string };
 
@@ -30,17 +30,22 @@ export function AskPanel({ collectionId, hasReadyDocuments }: { collectionId: st
     const controller = new AbortController();
     abortRef.current = controller;
     setAsked(q);
-    setState({ phase: "streaming", text: "" });
+    const startedAt = Date.now();
+    setState({ phase: "streaming", text: "", sources: null, startedAt });
 
     let text = "";
+    let sources: SourceRef[] | null = null;
     try {
       await ask(
         collectionId,
         q,
         (event) => {
-          if (event.type === "token") {
+          if (event.type === "sources") {
+            sources = event.sources;
+            setState({ phase: "streaming", text, sources, startedAt });
+          } else if (event.type === "token") {
             text += event.text;
-            setState({ phase: "streaming", text });
+            setState({ phase: "streaming", text, sources, startedAt });
           } else if (event.type === "done") {
             setState({ phase: "done", text: event.data.answer, done: event.data });
           } else {
@@ -105,10 +110,8 @@ export function AskPanel({ collectionId, hasReadyDocuments }: { collectionId: st
         <div className="space-y-3 border-t border-border pt-4" aria-live="polite">
           <p className="text-sm font-medium text-muted">{asked}</p>
           {state.phase === "error" && <Alert>{state.message}</Alert>}
-          {streaming && !state.text && (
-            <p className="flex items-center gap-2 text-sm text-muted">
-              <Spinner /> Searching your notes…
-            </p>
+          {state.phase === "streaming" && !state.text && (
+            <AnswerProgress sources={state.sources} startedAt={state.startedAt} />
           )}
           {(state.phase === "streaming" || state.phase === "done") && state.text && (
             <AnswerText text={state.text} citations={state.phase === "done" ? state.done.citations : []} />
@@ -117,6 +120,55 @@ export function AskPanel({ collectionId, hasReadyDocuments }: { collectionId: st
         </div>
       )}
     </Card>
+  );
+}
+
+/** What's happening while the model writes: search results first, then a live timer. */
+function AnswerProgress({ sources, startedAt }: { sources: SourceRef[] | null; startedAt: number }) {
+  const [now, setNow] = useState(startedAt);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.round((now - startedAt) / 1000));
+  const pages = sources ? [...new Set(sources.map((s) => s.page))].sort((a, b) => a - b) : [];
+  const documents = sources ? new Set(sources.map((s) => s.document_title)).size : 0;
+
+  return (
+    <div className="space-y-2 rounded-xl bg-surface-2 p-3.5 text-sm" role="status">
+      <p className="flex items-center gap-2">
+        {sources ? (
+          <span aria-hidden className="grid size-4 place-items-center rounded-full bg-success text-[0.6rem] text-white">
+            ✓
+          </span>
+        ) : (
+          <Spinner label="Searching" />
+        )}
+        {sources ? (
+          <span>
+            Found {sources.length} {sources.length === 1 ? "passage" : "passages"}
+            {documents > 1 ? ` in ${documents} files` : ""}
+            <span className="meta"> · page{pages.length === 1 ? "" : "s"} {pages.join(", ")}</span>
+          </span>
+        ) : (
+          <span>Searching your notes…</span>
+        )}
+      </p>
+      {sources && (
+        <p className="flex items-center gap-2">
+          <Spinner label="Writing" />
+          <span>
+            Writing your answer… <span className="meta">{seconds}s</span>
+          </span>
+        </p>
+      )}
+      {sources && seconds >= 15 && (
+        <p className="text-xs text-ink-soft">
+          The AI model is busy right now, so answers can take up to a minute. Yours is on its way: no
+          need to ask again.
+        </p>
+      )}
+    </div>
   );
 }
 

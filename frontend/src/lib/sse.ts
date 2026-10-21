@@ -31,6 +31,8 @@ function parseBlock(block: string): AskEvent | null {
   if (data.length === 0) return null;
   const payload = JSON.parse(data.join("\n"));
   switch (name) {
+    case "sources":
+      return { type: "sources", sources: payload.sources };
     case "token":
       return { type: "token", text: payload.text };
     case "done":

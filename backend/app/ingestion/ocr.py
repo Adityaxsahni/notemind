@@ -217,7 +217,12 @@ def get_ocr_provider() -> LLMProvider | None:
     settings = get_settings()
     if settings.llm_api_key is None or not settings.llm_api_key.get_secret_value():
         return None
-    return make_provider(settings.ocr_model or settings.llm_answer_model, "low", settings)
+    return make_provider(
+        settings.ocr_model or settings.llm_answer_model,
+        "low",
+        settings,
+        fallbacks=settings.llm_fallback_models,
+    )
 
 
 def make_transcriber(redis, user_id: uuid.UUID, provider: LLMProvider | None) -> Transcriber:

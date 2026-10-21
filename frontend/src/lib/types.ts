@@ -53,7 +53,14 @@ export interface AnswerDone {
   truncated: boolean;
 }
 
+/** A passage search found, sent before the model starts writing. */
+export interface SourceRef {
+  document_title: string;
+  page: number;
+}
+
 export type AskEvent =
+  | { type: "sources"; sources: SourceRef[] }
   | { type: "token"; text: string }
   | { type: "done"; data: AnswerDone }
   | { type: "error"; message: string };

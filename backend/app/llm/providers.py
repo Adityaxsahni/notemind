@@ -229,18 +229,53 @@ def _gemini_contents(request: LLMRequest) -> str | list:
     return [*images, request.user]
 
 
-def make_provider(model: str, effort: str, settings: Settings) -> LLMProvider:
-    """The vendor follows from the model name; LLM_API_KEY must be that vendor's key."""
+class FallbackProvider:
+    """Tries each provider in turn until one starts answering.
+
+    Free tiers fail per model: one is "experiencing high demand" (503) while another has
+    capacity, and quotas (429) are counted per model. A provider that fails after it has
+    started writing is not replaced: the student would see two answers spliced together.
+    """
+
+    def __init__(self, providers: list[LLMProvider]) -> None:
+        self._providers = providers
+
+    def stream(self, request: LLMRequest) -> Iterator[LLMEvent]:
+        for i, provider in enumerate(self._providers):
+            started = False
+            try:
+                for event in provider.stream(request):
+                    started = True
+                    yield event
+                return
+            except LLMUnavailable:
+                if started or i == len(self._providers) - 1:
+                    raise
+                logger.warning("llm fallback to model #%d after an error", i + 2)
+
+
+def make_provider(
+    model: str, effort: str, settings: Settings, fallbacks: list[str] | None = None
+) -> LLMProvider:
+    """The vendor follows from the model name; LLM_API_KEY must be that vendor's key.
+    `fallbacks`: further models (same vendor and key) to try when this one is unavailable."""
     if settings.llm_api_key is None or not settings.llm_api_key.get_secret_value():
         raise ValueError("LLM_API_KEY is not set")
-    provider = GeminiProvider if model.startswith("gemini-") else AnthropicProvider
-    return provider(
-        api_key=settings.llm_api_key.get_secret_value(),
-        model=model,
-        effort=effort,
-        timeout=settings.llm_timeout_seconds,
-        max_retries=settings.llm_max_retries,
-    )
+
+    def single(name: str) -> LLMProvider:
+        provider = GeminiProvider if name.startswith("gemini-") else AnthropicProvider
+        return provider(
+            api_key=settings.llm_api_key.get_secret_value(),
+            model=name,
+            effort=effort,
+            timeout=settings.llm_timeout_seconds,
+            max_retries=settings.llm_max_retries,
+        )
+
+    models = [model, *(m for m in fallbacks or [] if m != model)]
+    if len(models) == 1:
+        return single(model)
+    return FallbackProvider([single(name) for name in models])
 
 
 @lru_cache
@@ -249,4 +284,9 @@ def get_llm_provider() -> LLMProvider | None:
     settings = get_settings()
     if settings.llm_api_key is None or not settings.llm_api_key.get_secret_value():
         return None
-    return make_provider(settings.llm_answer_model, settings.llm_answer_effort, settings)
+    return make_provider(
+        settings.llm_answer_model,
+        settings.llm_answer_effort,
+        settings,
+        fallbacks=settings.llm_fallback_models,
+    )

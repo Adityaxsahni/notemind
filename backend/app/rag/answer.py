@@ -94,7 +94,21 @@ class AnswerError:
     message: str
 
 
-AnswerEvent = AnswerText | AnswerDone | AnswerError
+@dataclass(frozen=True)
+class SourceRef:
+    document_title: str
+    page: int
+
+
+@dataclass(frozen=True)
+class AnswerSources:
+    """Sent as soon as search finishes, before the model starts writing: the model can take
+    a while (a busy free tier: 20-45 s), and the student sees what was found meanwhile."""
+
+    sources: list[SourceRef]
+
+
+AnswerEvent = AnswerSources | AnswerText | AnswerDone | AnswerError
 
 
 def prepare_answer(
@@ -164,6 +178,7 @@ def _generate(
     redis: Redis,
     cache_key: str,
 ) -> Iterator[AnswerEvent]:
+    yield AnswerSources([SourceRef(c.document_title, c.page) for c in sources.values()])
     citation_filter = CitationFilter(set(sources))
     parts: list[str] = []
     completion: Completion | None = None

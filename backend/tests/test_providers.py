@@ -122,3 +122,54 @@ def test_model_name_picks_the_vendor():
     assert isinstance(make_provider("claude-opus-5-5", "low", settings), AnthropicProvider)
     with pytest.raises(ValueError, match="LLM_API_KEY"):
         make_provider("gemini-test", "low", settings.model_copy(update={"llm_api_key": None}))
+
+
+class _Scripted:
+    def __init__(self, events=(), error_after=None):
+        self.events, self.error_after, self.calls = list(events), error_after, 0
+
+    def stream(self, request):
+        self.calls += 1
+        for i, event in enumerate(self.events):
+            if self.error_after == i:
+                raise LLMUnavailable
+            yield event
+        if self.error_after == len(self.events):
+            raise LLMUnavailable
+
+
+def test_fallback_uses_the_next_model_when_one_is_unavailable():
+    from app.llm.providers import FallbackProvider
+
+    done = Completion(model="m2", stop_reason="end_turn", input_tokens=1, output_tokens=1)
+    busy, healthy = _Scripted(error_after=0), _Scripted([TextDelta("hi"), done])
+    events = list(FallbackProvider([busy, healthy]).stream(REQUEST))
+    assert [type(e) for e in events] == [TextDelta, Completion]
+    assert (busy.calls, healthy.calls) == (1, 1)
+
+
+def test_fallback_never_splices_two_answers():
+    from app.llm.providers import FallbackProvider
+
+    half, other = _Scripted([TextDelta("half an ans")], error_after=1), _Scripted([TextDelta("x")])
+    with pytest.raises(LLMUnavailable):
+        list(FallbackProvider([half, other]).stream(REQUEST))
+    assert other.calls == 0
+
+
+def test_fallback_raises_when_every_model_is_unavailable():
+    from app.llm.providers import FallbackProvider
+
+    with pytest.raises(LLMUnavailable):
+        list(FallbackProvider([_Scripted(error_after=0), _Scripted(error_after=0)]).stream(REQUEST))
+
+
+def test_make_provider_wraps_fallback_models(monkeypatch):
+    from app.llm.providers import FallbackProvider
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "llm_api_key", SecretStr("k"))
+    assert isinstance(make_provider("gemini-a", "low", settings), GeminiProvider)
+    wrapped = make_provider("gemini-a", "low", settings, fallbacks=["gemini-b", "gemini-a"])
+    assert isinstance(wrapped, FallbackProvider)
+    assert [p._model for p in wrapped._providers] == ["gemini-a", "gemini-b"]

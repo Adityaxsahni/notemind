@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     # Grounded Q&A over six short passages needs little deliberation; low effort also keeps
     # time-to-first-token down (thinking is always on for this model).
     llm_answer_effort: Literal["low", "medium", "high", "xhigh", "max"] = "low"
+    # Tried in order when the answer (or transcription) model is busy or out of quota, e.g.
+    # LLM_FALLBACK_MODELS=["gemini-3.6-flash","gemini-flash-lite-latest"]. Same key and vendor.
+    llm_fallback_models: list[str] = []
     llm_answer_max_tokens: int = 8000  # includes thinking; also the per-request budget hold
     llm_timeout_seconds: float = 60.0
     llm_max_retries: int = 2  # SDK retries 408/409/429/5xx/connection errors with backoff

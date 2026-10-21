@@ -29,6 +29,13 @@ describe("SSEParser", () => {
     expect(events).toEqual([{ type: "error", message: "Unavailable" }]);
   });
 
+  it("parses the sources sent before the answer", () => {
+    const events = new SSEParser().push(
+      'event: sources\ndata: {"sources": [{"document_title": "a.pdf", "page": 3}]}\n\n',
+    );
+    expect(events).toEqual([{ type: "sources", sources: [{ document_title: "a.pdf", page: 3 }] }]);
+  });
+
   it("ignores unknown event types", () => {
     expect(new SSEParser().push('event: ping\ndata: {}\n\n')).toEqual([]);
   });
