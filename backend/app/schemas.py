@@ -61,6 +61,25 @@ class PasswordConfirmIn(BaseModel):
     password: str = Field(max_length=128)
 
 
+class OtpChallengeOut(BaseModel):
+    """Password accepted; a code was emailed. Send it to /auth/otp/verify."""
+
+    otp_required: bool = True
+    challenge_id: str
+    email_hint: str
+    expires_in: int
+    dev_code: str | None = None  # local development without SMTP only
+
+
+class OtpVerifyIn(BaseModel):
+    challenge_id: str = Field(min_length=10, max_length=64)
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class OtpResendIn(BaseModel):
+    challenge_id: str = Field(min_length=10, max_length=64)
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

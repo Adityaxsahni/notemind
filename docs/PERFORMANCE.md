@@ -58,10 +58,60 @@ What broke, in order:
 
 ## After the changes
 
-At 300 concurrent users (2-minute run, CD's release check): **0 failed requests**, pages p95
-1 ms (served from the edge cache), API p95 16 ms, log-in p95 104 ms, search p95 255 ms.
+**300 users** (2-minute run; CD runs the same check on every release): **0 failed
+requests**, pages p95 1 ms (from the edge cache), API p95 16 ms, log-in p95 104 ms, search
+p95 255 ms.
 
-The 10,000-user run is in progress; its results replace this paragraph.
+**10,000 users:** pages held up: the edge served them all and none failed. The backend
+didn't. API calls started timing out from about 3,000–4,000 users, k6 itself ran out of
+memory after 8 minutes (no summary written), and Docker Desktop's engine stopped answering.
+Looking at the database afterwards showed why the backend never recovered:
+
+### Bug found: leaked connections under overload
+
+Even with no traffic, `/health` hung and Postgres showed all 40 connections (2 processes ×
+20) "idle in transaction". When a client gave up on a slow request, FastAPI cancelled it
+before running the cleanup of the synchronous `get_session` dependency (that cleanup needs
+a worker thread), so the session was never closed and its connection never returned. After
+40 abandoned requests the API was dead for good. Fixed by making `get_session` an async
+generator, whose cleanup runs inline even on cancellation, plus a 10 s pool timeout that
+answers 503 "busy, retry" instead of hanging (`app/db.py`, `app/main.py`; regression tests
+in `tests/test_hardening.py`). Without the load test, this would have appeared in
+production during the first traffic spike.
+
+### After the fix: 2,000 users with a sign-in burst
+
+`PROFILE=quick` ramps to 2,000 users in 30 seconds, so 600 students sign in at once:
+
+| Metric | Result |
+|---|---|
+| Failed requests | **1.09%** (of 73,044) |
+| Pages | median 4 ms, p95 1.2 s |
+| API calls | median 22.5 s, p95 timeouts |
+| Verdict | **Fail**, but the backend recovers afterwards (no leak) |
+
+**The next bottleneck is sign-in.** Each Argon2id password check (RFC 9106 parameters: 64 MB
+of memory, 3 passes, 4 lanes) costs tens of milliseconds of CPU on several cores, on
+purpose, to slow down password cracking. Hundreds per second fill both processes' 40 worker
+threads, and cheap requests queue behind them. Real traffic spreads sign-ins out (sessions
+last 30 days through refresh tokens), but a class all signing in when a lecture starts looks
+much like this.
+
+## Honest limits of these numbers
+
+One laptop can't run both the system and a 10,000-user generator: k6 needs about 5 GB and 6
+CPU threads for that many users, and the API gets what's left. The pass at 300 users and the
+fixes above hold. A clean 10,000-user result needs a separate load-generator machine and
+more than two API processes.
+
+## Next steps, in order
+
+1. Run password hashing on a small dedicated thread pool (for example 4 per process), so a
+   sign-in burst waits on itself instead of blocking every other request.
+2. More API processes or machines behind the edge (each needs ~0.9 GB for the models), and
+   PgBouncer once that goes past ~4 processes.
+3. Re-run the 10,000-user profile from separate hardware (k6 Cloud, or a second machine
+   pointed at the edge).
 
 ## Scaling further
 

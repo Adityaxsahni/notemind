@@ -20,13 +20,15 @@ Small, verifiable slices. Done items stay listed so the history of the build is 
 - [x] Handwriting: scanned/handwritten PDFs and photos transcribed by the vision model
 - [x] CD: images to GHCR, release load test, SSH deploy job; nginx edge; 10,000-user load test
 - [x] Paper-and-ink redesign (city-explorer handoff)
+- [x] Two-step sign-in (password + emailed code); auto-wait for the bot check's fill time
+- [x] Connection-leak fix found by the load test; deploy setup for Vercel + Hugging Face
 
 ## Next
 
 - [ ] Real-notes evaluation set (150 questions over 3 real courses) and answer-quality run
-- [ ] Email verification on sign-up; password reset
+- [ ] Password reset (by emailed code); account enumeration on sign-up
 - [ ] Nonce-based CSP (remove `'unsafe-inline'` for scripts)
-- [ ] Deploy: provision a server, set the CD variables (docs/CI_CD.md), TLS, backups
+- [ ] Deploy: create the Vercel, Hugging Face, Neon and Upstash projects (docs/DEPLOY.md)
 - [ ] HEIC photos (iPhone default) for handwriting uploads
 - [ ] Load test on separate generator hardware; Postgres connection pooler (PgBouncer) beyond ~4 API processes
 - [ ] Scheduled `python -m app.admin prune` job in production

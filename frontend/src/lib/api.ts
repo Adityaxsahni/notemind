@@ -72,11 +72,29 @@ export interface HumanCheck {
 
 export const getFormToken = () => json<{ token: string }>("/auth/form-token").then((r) => r.token);
 
+/** Password accepted; a one-time code was emailed (backend/app/security/otp.py). */
+export interface OtpChallenge {
+  otp_required: true;
+  challenge_id: string;
+  email_hint: string;
+  expires_in: number;
+  dev_code: string | null; // local development without a mail server only
+}
+
+export const needsOtp = (result: User | OtpChallenge): result is OtpChallenge =>
+  "otp_required" in result && result.otp_required === true;
+
 export const signup = (email: string, password: string, human: HumanCheck) =>
-  json<User>("/auth/signup", sendJson("POST", { email, password, ...human }));
+  json<User | OtpChallenge>("/auth/signup", sendJson("POST", { email, password, ...human }));
 
 export const login = (email: string, password: string, human: HumanCheck) =>
-  json<User>("/auth/login", sendJson("POST", { email, password, ...human }));
+  json<User | OtpChallenge>("/auth/login", sendJson("POST", { email, password, ...human }));
+
+export const verifyOtp = (challenge_id: string, code: string) =>
+  json<User>("/auth/otp/verify", sendJson("POST", { challenge_id, code }));
+
+export const resendOtp = (challenge_id: string) =>
+  json<OtpChallenge>("/auth/otp/resend", sendJson("POST", { challenge_id }));
 
 export const logout = () => request("/auth/logout", { method: "POST" });
 

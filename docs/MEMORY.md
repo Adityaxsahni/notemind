@@ -7,16 +7,24 @@ it at the end of each working session.
 
 ## State
 
-- All MVP stories done and tested; public website and security hardening done.
-- Runs locally with `docker compose up --build` → http://localhost:3000.
-- Repository: https://github.com/Adityaxsahni/notemind (public), CI green.
+- MVP, public website, security hardening, handwriting transcription, two-step sign-in
+  (password + emailed code), paper-and-ink redesign, CI/CD and load testing are done.
+- Runs locally with `docker compose up --build` → http://localhost:3000 (or :8080 via the
+  nginx edge). Without SMTP settings the sign-in code is shown on screen.
+- Repository: https://github.com/Adityaxsahni/notemind (public). CI and CD green; CD
+  publishes `ghcr.io/adityaxsahni/notemind-{backend,frontend}`.
+- Not deployed yet: needs the owner's Vercel, Hugging Face, Neon and Upstash accounts
+  ([DEPLOY.md](DEPLOY.md)).
 
 ## Configuration in use
 
 - LLM: Google Gemini on the free tier (`LLM_ANSWER_MODEL=gemini-3.5-flash-lite` in `.env`;
   `gemini-3.8-flash` is better but allows only 20 requests a day per model on the free tier).
   The free tier lets Google use submitted content; use a paid tier for real users.
+  Handwritten pages are transcribed by the same model.
 - CAPTCHA: not configured (Turnstile keys empty); honeypot + form token + rate limits active.
+- Email: no SMTP configured locally. Staging and production refuse to start without it
+  while `OTP_REQUIRED=true`.
 - Contact email on legal pages: placeholder `privacy@notemind.example`
   (`NEXT_PUBLIC_CONTACT_EMAIL`), to be replaced before launch.
 
@@ -28,10 +36,21 @@ it at the end of each working session.
   `X-Forwarded-For` from the frontend fixed that but let clients fake it, because Next.js
   rewrites pass the client's header through untouched; `frontend/client-ip.mjs` now replaces it
   with the real peer address before Next.js sees the request (verified: a spoofed 6.6.6.6 is ignored).
+  On Vercel, proxy addresses aren't fixed, so a shared `PROXY_SECRET` is used instead.
 - RLS + `INSERT … RETURNING`: the returned row must pass the SELECT policy, and the policy's
   helper can't see the row being inserted. Owners and self-memberships match directly; the
   write-only tables use `implicit_returning=False`.
 - pymupdf 2.x pulls an ONNX layout model that crashed on Windows; excluded via uv overrides.
+- **Load test found a connection leak**: a request cancelled because its client timed out
+  never ran FastAPI's threaded cleanup of the sync `get_session` dependency, leaving the
+  connection "idle in transaction". Under overload every pool filled up for good and even
+  `/health` hung. `get_session` is now an async generator (cleanup runs inline).
+- The laptop can't run 10,000 virtual users and the system at once: k6 alone needs ~5 GB and
+  6 CPU threads, and Docker Desktop's engine stops answering. Use separate hardware for that.
+- The bot check's 2-second minimum fill time rejected people whose password manager filled
+  and submitted the form instantly; the form now waits out the remainder itself.
+- The Docker frontend container only shows frontend changes after `docker compose build
+  frontend`; `npm run build` alone doesn't update it.
 
 ## Open items
 

@@ -24,11 +24,30 @@ export class Api {
         const body = request.postDataJSON();
         // pragma: allowlist nextline secret
         if (body.password === "wrong-password") return reply(401, { detail: "Invalid email or password" });
+        // Accounts with "otp" in the address get the two-step flow: a code by email.
+        if (body.email.includes("otp")) {
+          return reply(202, {
+            otp_required: true,
+            challenge_id: "challenge-0123456789",
+            email_hint: "o***@college.edu",
+            expires_in: 600,
+            dev_code: null,
+          });
+        }
         return route.fulfill({
           status: path.endsWith("signup") ? 201 : 200,
           contentType: "application/json",
           headers: { "Set-Cookie": "signed_in=1; Path=/; SameSite=Strict" },
           body: JSON.stringify({ id: "u1", email: body.email, created_at: "2026-10-21T00:00:00Z" }),
+        });
+      }
+      if (path === "/auth/otp/verify") {
+        if (request.postDataJSON().code !== "424242") return reply(400, { detail: "That code is wrong or has expired." });
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          headers: { "Set-Cookie": "signed_in=1; Path=/; SameSite=Strict" },
+          body: JSON.stringify({ id: "u1", email: "otp@college.edu", created_at: "2026-10-21T00:00:00Z" }),
         });
       }
       if (path === "/me") return reply(200, { id: "u1", email: "alice@college.edu", created_at: "2026-10-21T00:00:00Z" });

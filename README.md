@@ -14,6 +14,8 @@ and a Next.js frontend.
   came from. When the notes don't cover a question, NoteMind says so instead of guessing.
 - **Quiz yourself**: multiple-choice questions written from your notes, on a topic or across
   the whole course, each linked to its source page.
+- **Two-step sign-in**: password, then a 6-digit code by email (HMAC-stored, single use,
+  5 attempts, 10-minute expiry). Doubles as email verification on sign-up.
 - **Share a course** read-only with classmates through a revocable invite link.
 - **Own your data**: export everything as JSON, or delete your account and all files.
 - **A proper public site**: landing and features pages, privacy policy, terms, cookie
@@ -53,6 +55,7 @@ and per-user rate limits, an append-only audit log, and a STRIDE threat model. S
 | [Test plan](docs/TEST_PLAN.md) | Test layers, commands, release checklist, latest results |
 | [Performance](docs/PERFORMANCE.md) | 10,000-user load test: method, results, bottlenecks fixed |
 | [CI/CD](docs/CI_CD.md) | Pipelines, image publishing, release load test, deployment setup |
+| [Deploy](docs/DEPLOY.md) | Vercel (website) + Hugging Face Space, Neon, Upstash (backend), step by step |
 | [Decisions](docs/DECISIONS.md) · [System design](docs/SYSTEM_DESIGN.md) | Why things are the way they are; threat model |
 | [Rules](docs/RULES.md) · [Tasks](docs/TASKS.md) · [Memory](docs/MEMORY.md) | How to contribute, what's next, current state |
 
@@ -66,6 +69,10 @@ for `gemini-*` models (set `LLM_ANSWER_MODEL=gemini-3.8-flash`, for example):
 ```bash
 cp .env.example .env
 ```
+
+Sign-in asks for a 6-digit code after the password. Locally, without SMTP settings, the code
+is shown on the sign-in screen (never in staging or production, which refuse to start
+without a mail server).
 
 **Everything in Docker** — open http://localhost:3000:
 

@@ -15,6 +15,8 @@ tests and the smoke test.
 | Retrieval regression | Recall@6, MRR, refusal on the seed eval set | `python -m ml.eval.run retrieval --set seed --only baseline …` | yes |
 | End to end, real stack | 196 MB / 1,500-page PDF upload, search, cited answers, refusal, quizzes, size limit, sharing, export, deletion | `scripts/smoke_test.py` (see README) | no (needs Docker + LLM) |
 | Performance | Lighthouse mobile on public pages | see below | no |
+| Load | k6 up to 10,000 users through the edge ([PERFORMANCE.md](PERFORMANCE.md)) | `docker compose -f docker-compose.yml -f docker-compose.loadtest.yml run --rm k6` | CD: 300 users on every release |
+| Live sign-in flow | sign-up, emailed code, courses, log-in again; screenshots | `node frontend/e2e-live/flow.mjs <out-dir>` against the running stack | no |
 
 ## Release checklist (before and after deploying)
 
@@ -26,9 +28,13 @@ tests and the smoke test.
 
 ## Latest results (21 Oct 2026)
 
-- Backend: 252 tests pass (incl. RLS 8/8, hardening 27/27); eval 23/23; retrieval gate passes.
-- Playwright: 30 passed (desktop + mobile).
-- Smoke test (real stack, RLS on): 36/36 checks; 196 MB PDF searchable in 42 s; answers start in 1.0–1.8 s.
+- Backend: 289 tests pass (incl. RLS, hardening, OTP 12, transcription 16); eval 23/23;
+  retrieval gate passes; migrations round-trip on an empty database.
+- Playwright: 32 passed (desktop + mobile), including the one-time-code step.
+- Smoke test (real stack, RLS on, two-step sign-in): 39/39 checks; 196 MB PDF searchable in
+  107 s; answers start in 2.1–4.1 s.
+- Handwriting: a photo of notebook notes was transcribed by Gemini and found by search.
+- Load: see [PERFORMANCE.md](PERFORMANCE.md).
 - Lighthouse mobile (performance / accessibility / best practices / SEO):
   home 98/100/100/100, features 98/100/100/100, privacy 97/100/100/100,
   signup 95/100/96/100 (the 96 is a 404 for the bot-check token when no backend is running).

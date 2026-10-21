@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 
 from app.api import (
     admin,
@@ -26,6 +27,7 @@ from app.config import get_settings
 from app.embeddings import get_embedder
 from app.rag.reranker import get_reranker
 from app.rate_limit import global_rate_limit
+from app.trusted_proxy import TrustedProxyMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,9 @@ def create_app() -> FastAPI:
             allow_headers=["Content-Type"],
         )
 
+    if settings.proxy_secret and settings.proxy_secret.get_secret_value():
+        app.add_middleware(TrustedProxyMiddleware, secret=settings.proxy_secret.get_secret_value())
+
     @app.middleware("http")
     async def add_security_headers(request: Request, call_next) -> Response:
         # A request id ties a user's error report to the server log line.
@@ -83,6 +88,17 @@ def create_app() -> FastAPI:
         request.state.request_id = request_id
         try:
             response = await call_next(request)
+        except PoolTimeout:
+            # Every database connection is busy: overloaded, not broken. Ask to retry.
+            logger.warning("db pool exhausted request_id=%s path=%s", request_id, request.url.path)
+            response = JSONResponse(
+                status_code=503,
+                content={
+                    "detail": "We're busy right now. Please try again.",
+                    "request_id": request_id,
+                },
+                headers={"Retry-After": "5"},
+            )
         except Exception:
             logger.exception(
                 "unhandled error request_id=%s method=%s path=%s",

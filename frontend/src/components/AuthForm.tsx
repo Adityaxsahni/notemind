@@ -4,12 +4,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { ApiError, getFormToken, login, signup } from "@/lib/api";
+import { ApiError, getFormToken, login, needsOtp, type OtpChallenge, signup } from "@/lib/api";
 import { safeNext } from "@/lib/auth";
 import { TURNSTILE_SITE_KEY } from "@/lib/site";
 import { emailProblem, passwordProblem, passwordStrength } from "@/lib/validation";
 
 import { Logo } from "./icons";
+import { OtpStep } from "./OtpStep";
 import { Alert, Button, Card, Input, Label, Spinner } from "./ui";
 
 type Turnstile = {
@@ -50,6 +51,10 @@ function useTurnstile(container: React.RefObject<HTMLDivElement | null>) {
 }
 
 const STRENGTH = ["Too short", "Weak", "Fair", "Good", "Strong"];
+// The backend refuses forms submitted faster than this after the token was issued (a bot
+// signal). A password manager can fill and submit sooner, so wait out the rest instead.
+const MIN_FILL_MS = 2200;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const noSubscription = () => () => {};
 
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
@@ -68,13 +73,20 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const formToken = useRef<Promise<string | null> | null>(null);
+  const tokenIssuedAt = useRef(0);
+  const [challenge, setChallenge] = useState<OtpChallenge | null>(null);
   const captchaBox = useRef<HTMLDivElement>(null);
   const captcha = useTurnstile(captchaBox);
 
   useEffect(() => {
     // Fetched when the form appears: the backend checks how long ago that was.
-    formToken.current = getFormToken().catch(() => null);
+    refreshFormToken();
   }, []);
+
+  function refreshFormToken() {
+    tokenIssuedAt.current = Date.now();
+    formToken.current = getFormToken().catch(() => null);
+  }
 
   const emailError = emailProblem(email);
   const passwordError = passwordProblem(password, email, isSignup);
@@ -96,10 +108,18 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         website: honeypot,
         captcha_token: captcha.token,
       };
-      await (isSignup ? signup(email.trim(), password, human) : login(email.trim(), password, human));
+      await sleep(Math.max(0, tokenIssuedAt.current + MIN_FILL_MS - Date.now()));
+      const result = await (isSignup
+        ? signup(email.trim(), password, human)
+        : login(email.trim(), password, human));
+      if (needsOtp(result)) {
+        setChallenge(result);
+        setBusy(false);
+        return;
+      }
       router.replace(next);
     } catch (err) {
-      formToken.current = getFormToken().catch(() => null); // fresh token for the retry
+      refreshFormToken(); // fresh token for the retry
       captcha.reset();
       setError(
         err instanceof ApiError
@@ -110,6 +130,20 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       );
       setBusy(false);
     }
+  }
+
+  if (challenge) {
+    return (
+      <OtpStep
+        challenge={challenge}
+        onVerified={() => router.replace(next)}
+        onRestart={() => {
+          setChallenge(null);
+          setPassword("");
+          refreshFormToken();
+        }}
+      />
+    );
   }
 
   const otherHref = `${isSignup ? "/login" : "/signup"}${next !== "/courses" ? `?next=${encodeURIComponent(next)}` : ""}`;

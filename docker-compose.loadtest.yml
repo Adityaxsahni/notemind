@@ -13,6 +13,7 @@ services:
       # Two API processes: on a 16 GB laptop the 10,000-user generator needs ~5 GB itself.
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
       UVICORN_ACCESS_LOG: "false"  # a log line per request costs more than the request
+      OTP_REQUIRED: "false"  # virtual users have no inbox; password-only sign-in
 
   # Not part of the request path; stopped so the generator and the API get the memory.
   worker:

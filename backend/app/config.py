@@ -24,15 +24,27 @@ class Settings(BaseSettings):
     # Postgres's max_connections (100), leaving room for workers and migrations.
     db_pool_size: int = 10
     db_max_overflow: int = 10
+    # Fail fast when overloaded (503, retry) instead of holding a worker thread for 30 s.
+    db_pool_timeout_seconds: float = 10.0
     redis_url: str = "redis://127.0.0.1:6379/0"
     # Empty: the browser only talks to the Next.js origin, which proxies the API, so no
     # cross-origin access is needed. List exact origins only if another site must call the API.
     cors_origins: list[str] = []
+    # Shared with the frontend's proxy when it runs on Vercel (app/trusted_proxy.py). Unset in
+    # Docker, where the proxies have fixed addresses instead.
+    proxy_secret: SecretStr | None = None
     # Requests per minute per client IP across the whole API (route-specific limits are lower).
     global_rate_limit_per_minute: int = 600
     # Bot checks on sign-up and log-in (app/security/bot.py).
     bot_min_fill_seconds: float = 2.0
     turnstile_secret_key: SecretStr | None = None
+    # Two-step sign-in: password, then a one-time code by email (app/security/otp.py).
+    otp_required: bool = True
+    smtp_host: str | None = None  # unset: codes are logged and shown on screen (local only)
+    smtp_port: int = 587  # 587 STARTTLS, or 465 implicit TLS
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from: str = "NoteMind <no-reply@notemind.example>"
 
     upload_dir: Path = Path("data/uploads")
     max_upload_bytes: int = 200 * 1024 * 1024  # big course packs and image-heavy slide exports
@@ -99,6 +111,14 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _real_email_outside_local(self) -> "Settings":
+        # Without SMTP, sign-in codes are shown on screen: fine on a laptop, never deployed.
+        if self.environment in ("staging", "production") and self.otp_required:
+            if not self.smtp_host:
+                raise ValueError("Set SMTP_HOST (and credentials) or OTP_REQUIRED=false")
+        return self
+
+    @model_validator(mode="after")
     def _no_wildcard_cors(self) -> "Settings":
         # Credentials (auth cookies) with a wildcard origin would let any site act as the user.
         if "*" in self.cors_origins:
@@ -108,6 +128,11 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @property
+    def show_otp_on_screen(self) -> bool:
+        """Local development without a mail server: the API returns the code itself."""
+        return self.environment == "local" and not self.smtp_host
 
 
 @lru_cache

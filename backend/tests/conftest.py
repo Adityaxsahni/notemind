@@ -2,6 +2,7 @@ import os
 
 os.environ["ENVIRONMENT"] = "test"  # must be set before app settings are first loaded
 os.environ["BOT_MIN_FILL_SECONDS"] = "0"  # bot-check tests set their own delay
+os.environ["OTP_REQUIRED"] = "false"  # one-step sign-in; tests/test_otp.py turns codes on
 
 import fakeredis  # noqa: E402
 import pytest  # noqa: E402

@@ -1,5 +1,5 @@
 import uuid
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from functools import lru_cache
 
 from sqlalchemy import Engine, create_engine, event, text
@@ -51,6 +51,7 @@ def get_engine() -> Engine:
             pool_pre_ping=True,
             pool_size=settings.db_pool_size,
             max_overflow=settings.db_max_overflow,
+            pool_timeout=settings.db_pool_timeout_seconds,
         )
     )
 
@@ -65,8 +66,16 @@ def new_session() -> Session:
     return _session_factory()()
 
 
-def get_session() -> Iterator[Session]:
-    """FastAPI dependency: one session per request, always closed."""
+async def get_session() -> AsyncIterator[Session]:
+    """FastAPI dependency: one session per request, always closed.
+
+    Async on purpose, though the session is used from sync routes. FastAPI runs a sync
+    dependency's cleanup on a worker thread; when the client gives up (a timeout under
+    load), the request is cancelled before it gets a thread, so `close()` never ran and the
+    connection stayed checked out "idle in transaction". The load test exhausted every
+    pool that way. Here `close()` runs inline, even on cancellation; it costs one ROLLBACK
+    round-trip on the event loop (well under a millisecond to a local Postgres).
+    """
     session = new_session()
     try:
         yield session

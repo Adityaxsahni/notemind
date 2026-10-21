@@ -28,6 +28,9 @@ with steps to reproduce. Please don't open a public issue for security problems.
 | **Secrets out of git**: detect-secrets pre-commit hook; `.env` ignored | `.pre-commit-config.yaml` | pre-commit, CI |
 | **Dependencies**: pip-audit, bandit, pinned lockfiles | CI | CI |
 | **Security headers**: CSP, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy | `next.config.ts`, `main.py` | Playwright + backend header tests |
+| **Two-step sign-in**: password, then a 6-digit emailed code; only an HMAC of the code is stored, single use, 5 attempts, 10-minute expiry, 3 sends, per-IP limits; deployments refuse to start without SMTP | `security/otp.py`, `mail.py`, `api/auth.py` | `tests/test_otp.py`, Playwright |
+| **Client IP behind Vercel**: trusted only from requests carrying `PROXY_SECRET`; the header is stripped before the app | `trusted_proxy.py`, `frontend/src/proxy.ts` | `test_trusted_proxy_sets_the_client_address_only_with_the_secret` |
+| **No leaked DB connections on cancelled requests** (found by the load test): session closed inline; pool exhaustion answers 503 | `db.py`, `main.py` | `test_session_is_closed_even_when_the_request_is_cancelled` |
 | **Edge proxy**: overwrites `X-Forwarded-For` with the TCP peer (never appends); caches only responses without `Set-Cookie`; same upload limit | `deploy/nginx/` | load test, header checks |
 | **Untrusted images** (photos, scanned pages): decoded only in the memory-capped worker; 60-megapixel cap against decompression bombs; re-encoded to JPEG before leaving the server; HEIC refused | `ingestion/ocr.py`, `ingestion/validation.py` | `tests/test_transcription.py` |
 | **Prompt injection in handwriting**: the transcription prompt treats image text as content, never instructions; output is only stored as that user's own page text, which the answer pipeline already escapes | `ingestion/ocr.py`, `rag/answer.py` | transcription and injection tests |
@@ -53,5 +56,6 @@ with steps to reproduce. Please don't open a public issue for security problems.
 - RLS protects against application bugs, not SQL injection (which could set the user id
   itself); parameterized queries are the defence there.
 - The form token raises the cost of naive bots only; Turnstile is the real bot check.
-- No email verification yet: sign-up confirms an address exists (TODO in `api/auth.py`).
+- Sign-up still answers 409 for an existing email (account enumeration); the sign-in code
+  step means a found address is still useless without its inbox.
 - CSP still allows inline scripts (Next.js); nonce-based CSP is a planned hardening step.

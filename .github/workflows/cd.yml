@@ -108,6 +108,7 @@ jobs:
             echo "POSTGRES_USER=notemind"
             echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
             echo "POSTGRES_DB=notemind"
+            echo "OTP_REQUIRED=false"  # no mail server here; virtual users can't read email
           } > .env
       - name: Start the released stack
         run: |

@@ -42,7 +42,17 @@ def signup(c: httpx.Client, tag: str) -> str:
         "/auth/signup",
         json={"email": email, "password": PASSWORD, "form_token": token, "website": ""},
     )
-    check(f"sign up {tag}", r.status_code == 201, f"{r.status_code} {r.text[:120]}")
+    if r.status_code == 202:
+        # Two-step sign-in. Locally without SMTP the code comes back in the response.
+        challenge = r.json()
+        check(f"sign-in code issued {tag}", bool(challenge.get("dev_code")), r.text[:120])
+        r = c.post(
+            "/auth/otp/verify",
+            json={"challenge_id": challenge["challenge_id"], "code": challenge["dev_code"]},
+        )
+        check(f"sign up {tag} (password + code)", r.status_code == 200, f"{r.status_code}")
+    else:
+        check(f"sign up {tag}", r.status_code == 201, f"{r.status_code} {r.text[:120]}")
     # Browsers treat http://localhost as secure and send Secure cookies to it; httpx doesn't,
     # so re-add them without the flag.
     for cookie in list(c.cookies.jar):

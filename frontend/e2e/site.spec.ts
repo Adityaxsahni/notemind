@@ -148,6 +148,23 @@ test.describe("sign-up and log-in forms", () => {
     await expect(page.getByRole("textbox", { name: "Website" })).toHaveCount(0);
   });
 
+  test("password, then the emailed one-time code", async ({ page, api }) => {
+    await page.goto("/login");
+    await page.getByLabel("Email").fill("otp@college.edu");
+    await page.getByLabel("Password", { exact: true }).fill("correct-horse-battery");
+    await page.getByRole("button", { name: "Log in" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Check your");
+    await expect(page.getByText("o***@college.edu")).toBeVisible();
+    await page.getByLabel("Sign-in code").fill("000000"); // six digits submit by themselves
+    await expect(page.getByRole("alert").filter({ hasText: "wrong" })).toContainText("wrong or has expired");
+    await page.getByLabel("Sign-in code").fill("424242");
+    await expect(page).toHaveURL(/\/courses$/);
+    expect(api.sent("/auth/otp/verify").at(-1)?.postDataJSON()).toEqual({
+      challenge_id: "challenge-0123456789",
+      code: "424242",
+    });
+  });
+
   test("login shows the server's error message", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel("Email").fill("alice@college.edu");

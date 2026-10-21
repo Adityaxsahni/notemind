@@ -154,6 +154,8 @@ PUBLIC_ROUTES = {
     "/auth/login",
     "/auth/refresh",
     "/auth/logout",
+    "/auth/otp/verify",
+    "/auth/otp/resend",
     "/analytics/event",
     "/telemetry/errors",
 }
@@ -309,3 +311,71 @@ def test_sensitive_actions_are_audited(make_client, db):
         "account.deleted",
     ]
     assert {str(actor) for _, actor in rows} == {alice_id}
+
+
+def test_session_is_closed_even_when_the_request_is_cancelled(monkeypatch):
+    # Regression (load test): a client timing out cancelled the request before FastAPI ran a
+    # sync dependency's cleanup, leaking the connection "idle in transaction" until every
+    # pool was exhausted. The async dependency must close the session on cancellation.
+    import asyncio
+
+    from app import db
+
+    closed = []
+
+    class FakeSession:
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(db, "new_session", FakeSession)
+
+    async def cancel_mid_request():
+        dependency = db.get_session()
+        await anext(dependency)
+        with pytest.raises(asyncio.CancelledError):
+            await dependency.athrow(asyncio.CancelledError())
+
+    asyncio.run(cancel_mid_request())
+    assert closed == [True]
+
+
+def test_exhausted_connection_pool_answers_503_with_retry_after(make_client):
+    from sqlalchemy.exc import TimeoutError as PoolTimeout
+
+    from app.db import get_session
+
+    def overloaded():
+        raise PoolTimeout("QueuePool limit reached")
+
+    client = make_client()
+    app.dependency_overrides[get_session] = overloaded
+    response = client.get("/me")
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "5"
+    assert "request_id" in response.json()
+
+
+def test_trusted_proxy_sets_the_client_address_only_with_the_secret():
+    import asyncio
+
+    from app.trusted_proxy import TrustedProxyMiddleware
+
+    seen = {}
+
+    async def downstream(scope, receive, send):
+        seen["client"] = scope["client"]
+        seen["headers"] = dict(scope["headers"])
+
+    secret = "s3cret-value"  # pragma: allowlist secret
+    middleware = TrustedProxyMiddleware(downstream, secret=secret)
+
+    def call(headers):
+        scope = {"type": "http", "client": ("76.76.21.21", 443), "headers": headers}
+        asyncio.run(middleware(scope, None, None))
+        return seen["client"][0]
+
+    real = [(b"x-real-ip", b"203.0.113.7")]
+    assert call([(b"x-notemind-proxy", b"s3cret-value"), *real]) == "203.0.113.7"
+    assert b"x-notemind-proxy" not in seen["headers"]  # never reaches the app
+    assert call([(b"x-notemind-proxy", b"wrong"), *real]) == "76.76.21.21"
+    assert call(real) == "76.76.21.21"  # a visitor can't claim an address on their own
