@@ -26,6 +26,8 @@ services:
 
   backend:
     build: ./backend
+    # Worker and indexer reuse this image: one ~2.5 GB build instead of three.
+    image: notemind-backend
     # Dev convenience: apply migrations on start. In production this is a separate release step.
     command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     env_file: .env
@@ -44,7 +46,8 @@ services:
         condition: service_healthy
 
   worker:
-    build: ./backend
+    image: notemind-backend
+    pull_policy: never  # built by the backend service
     command: ["python", "-m", "app.worker", "ingestion"]
     # Parses untrusted files: cap memory so a malicious document can't starve the host.
     mem_limit: 2g
@@ -62,7 +65,8 @@ services:
         condition: service_healthy
 
   indexer:
-    build: ./backend
+    image: notemind-backend
+    pull_policy: never
     # Chunks and embeds extracted text; keeps the embedding model loaded between jobs.
     command: ["python", "-m", "app.worker", "indexing"]
     mem_limit: 2g
@@ -76,6 +80,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        BACKEND_URL: http://backend:8000  # API paths are proxied to the backend container
+    # Same port as `npm run dev`: run one or the other.
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - backend
 
 volumes:
   pgdata:
