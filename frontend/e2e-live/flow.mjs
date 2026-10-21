@@ -1,12 +1,22 @@
-// One-off check against the running Docker stack (not part of CI): sign up, enter the
-// emailed code (shown on screen in local development), land on the courses page, log out,
-// log back in with password + code, and screenshot each step.
+// One-off check against a running stack (not part of CI): sign up, enter the emailed code
+// if the server asks for one (shown on screen in local development), land on the courses
+// page, log out, log back in, and screenshot each step. BASE_URL picks the stack.
 import { chromium, devices } from "@playwright/test";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3000";
 const OUT = process.argv[2] ?? ".";
 const email = `demo-${Date.now()}@example.com`;
 const password = "Revision-season-2026"; // pragma: allowlist secret
+
+// Password accepted: either a code step (with the code on screen locally) or straight in.
+async function finishSignIn(page, label) {
+  await Promise.race([page.getByText("Check your").waitFor(), page.waitForURL("**/courses", { waitUntil: "commit" })]);
+  if (page.url().endsWith("/courses")) return console.log(`${label}: signed in (password only)`);
+  const code = (await page.locator("[role=status] button").first().textContent())?.trim();
+  await page.getByLabel("Sign-in code").fill(code);
+  await page.waitForURL("**/courses", { waitUntil: "commit" });
+  console.log(`${label}: signed in with password + code ${code}`);
+}
 
 const browser = await chromium.launch();
 for (const [name, options] of [
@@ -27,16 +37,11 @@ for (const [name, options] of [
   await page.getByRole("checkbox").check();
   await shot("signup");
   await page.getByRole("button", { name: "Create free account" }).click();
-  await page.getByText("Check your").waitFor();
-  await shot("otp");
-  const code = (await page.locator("#otp ~ *, [role=status] button").first().textContent())?.trim();
-  await page.getByLabel("Sign-in code").fill(code);
-  await page.waitForURL("**/courses");
+  await finishSignIn(page, `${name} sign-up`);
   await page.getByLabel("New collection name").fill("Cell Biology 101");
   await page.getByRole("button", { name: "New collection" }).click();
   await page.getByText("Cell Biology 101").first().waitFor();
   await shot("courses");
-  console.log(`${name}: signed up and verified with code ${code}`);
 
   await page.getByRole("link", { name: /Enter|Cell Biology/ }).first().click();
   await page.waitForURL("**/c/**");
@@ -49,10 +54,11 @@ for (const [name, options] of [
   await page.getByLabel("Email").fill(user);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Log in" }).click();
-  await page.getByText("Check your").waitFor();
-  const again = (await page.locator("[role=status] button").first().textContent())?.trim();
-  await page.getByLabel("Sign-in code").fill(again);
-  await page.waitForURL("**/courses");
-  console.log(`${name}: logged in again with password + code ${again}`);
+  try {
+    await finishSignIn(page, `${name} log-in`);
+  } catch (error) {
+    await page.screenshot({ path: `${OUT}/${name}-login-failed.png` });
+    throw error;
+  }
 }
 await browser.close();

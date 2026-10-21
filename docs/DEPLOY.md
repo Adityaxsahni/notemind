@@ -1,5 +1,23 @@
 # Deploying NoteMind
 
+## Free right now: a public link from your own machine
+
+No account and no card: a Cloudflare quick tunnel gives the stack running on your machine a
+public HTTPS address. The link works while the machine and Docker are on, and changes every
+time the tunnel restarts.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.tunnel.yml logs tunnel | grep trycloudflare
+```
+
+While exposed, the backend runs in production mode (no API docs, sign-in codes never shown
+on screen), and nginx takes visitor addresses only from the tunnel container's
+`CF-Connecting-IP`. Sign-in is password-only until SMTP is configured; then set
+`OTP_REQUIRED=true` (in `.env`) and restart. Stop sharing with `docker compose stop tunnel`.
+
+## Hosted
+
 **Choice: Vercel for the website, a Docker host for the backend.**
 
 - **Vercel vs GitHub Pages.** GitHub Pages serves static files only. It can't run the
@@ -7,10 +25,11 @@
   headers and renders the social image. On Pages only the marketing pages would work, and
   nobody could sign in. Vercel runs Next.js natively, with HTTPS, a CDN, and automatic
   deploys from GitHub (previews for every pull request).
-- **The backend can't run on Vercel.** It needs PyTorch models (~1 GB RAM), two background
-  workers, Postgres with pgvector and Redis. Free option: a Hugging Face Docker Space (2 vCPU,
-  16 GB RAM) for the API and workers, Neon for Postgres (pgvector included) and Upstash for
-  Redis. All three have free tiers that don't need a card.
+- **The backend can't run on Vercel.** It needs PyTorch models (~1.5 GB RAM), two background
+  workers, Postgres with pgvector and Redis. Neon (Postgres + pgvector) and Upstash (Redis)
+  have free tiers without a card, both available through Vercel's marketplace. A host with
+  enough memory for the API is no longer free: Hugging Face Docker Spaces now need PRO
+  ($9/month, October 2026), and the card-free tiers elsewhere (Render, Koyeb) give 512 MB.
 
 ```
 Browser ──HTTPS──> Vercel (Next.js: pages, CDN)

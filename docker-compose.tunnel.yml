@@ -1,0 +1,37 @@
+# Free public HTTPS link to the stack running on this machine, through a Cloudflare quick
+# tunnel (no account needed). The link works while this machine and Docker are running, and
+# changes every time the tunnel restarts.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.tunnel.yml logs tunnel | grep trycloudflare
+#
+# The app runs in production mode while exposed: no API docs, and the sign-in code is never
+# shown on screen. Without SMTP settings, sign-in is password-only (OTP_REQUIRED=false).
+x-public: &public
+  ENVIRONMENT: production
+  OTP_REQUIRED: ${OTP_REQUIRED:-false}
+
+services:
+  backend:
+    environment:
+      <<: *public
+  worker:
+    environment:
+      <<: *public
+  indexer:
+    environment:
+      <<: *public
+
+  edge:
+    volumes:
+      - ./deploy/tunnel/real-ip.conf:/etc/nginx/real-ip/tunnel.conf:ro
+
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.0
+    command: ["tunnel", "--no-autoupdate", "--url", "http://edge:8080"]
+    networks:
+      default:
+        ipv4_address: 172.30.0.30  # the only address the edge takes visitor IPs from
+    depends_on:
+      - edge
+    restart: unless-stopped
