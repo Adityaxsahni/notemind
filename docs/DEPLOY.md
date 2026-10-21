@@ -16,6 +16,11 @@ on screen), and nginx takes visitor addresses only from the tunnel container's
 `CF-Connecting-IP`. Sign-in is password-only until SMTP is configured; then set
 `OTP_REQUIRED=true` (in `.env`) and restart. Stop sharing with `docker compose stop tunnel`.
 
+Quick tunnels don't reconnect after the machine sleeps or the network drops (cloudflared logs
+"Tunnel not found" and the link stops working). Run
+`powershell -ExecutionPolicy Bypass -File scripts\public-link.ps1` to start a fresh tunnel
+and print the new link.
+
 ## Hosted
 
 **Choice: Vercel for the website, a Docker host for the backend.**
