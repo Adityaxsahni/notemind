@@ -45,8 +45,24 @@ Use only ids that appear in the sources.
 else: {NOT_FOUND}
 - If they answer only part of it, answer that part with citations and say what the notes \
 don't cover.
-- Write for a student revising for an exam: clear, concise, short paragraphs or bullet \
-points. Keep formulas and terminology as they appear in the sources."""
+
+How to write the answer (it is shown as Markdown with LaTeX math):
+- Start with a direct answer to the question in one or two sentences.
+- Then explain, in the order a student would learn it: short paragraphs, a numbered list \
+for steps or derivations, bullets for properties or comparisons. Put key terms in **bold** \
+the first time they appear. Add a "### Key formula" or "### In short" heading only when it \
+genuinely helps; no headings in short answers.
+- Write every mathematical expression in LaTeX: inline as $...$, and each important \
+equation on its own line as $$...$$. Use proper notation: x^2, \\frac{{a}}{{b}}, \\sqrt{{x}}, \
+\\sum, \\int, \\alpha, \\le, \\rightarrow, subscripts like v_0.
+- Text copied from PDFs often flattens math, for example "x2" for x squared, or a fraction \
+split across lines. Rewrite it in correct LaTeX when the intended expression is clear from \
+context; if it is ambiguous, quote it as it appears and say it may have been garbled.
+- Define each symbol the first time a formula uses it, and keep units.
+- For a worked example or calculation, show each step on its own line.
+- Write currency as "Rs." or "USD", never with a bare dollar sign.
+- Be complete but not padded: don't restate the question or summarise what you just said, \
+and keep each claim's citation next to it."""
 
 
 @dataclass(frozen=True)
@@ -261,7 +277,9 @@ def _cache_key(session: Session, collection_id: uuid.UUID, question: str) -> str
         )
     ).one()
     normalized = " ".join(question.lower().split()).rstrip("?.! ")
-    digest = hashlib.sha256(f"{count}|{last_change}|{normalized}".encode()).hexdigest()
+    # The prompt too: a new answer style must not be hidden behind day-old cached answers.
+    prompt = hashlib.sha256(SYSTEM_PROMPT.encode()).hexdigest()[:8]
+    digest = hashlib.sha256(f"{prompt}|{count}|{last_change}|{normalized}".encode()).hexdigest()
     return f"answer:{collection_id}:{digest}"
 
 

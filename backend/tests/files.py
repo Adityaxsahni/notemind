@@ -112,3 +112,17 @@ def make_photo(fmt: str = "JPEG", size: tuple[int, int] = (300, 200), rotate=Fal
     else:
         photo.save(out, fmt)
     return out.getvalue()
+
+
+def make_math_pdf(math_pages: set[int], pages: int = 3) -> bytes:
+    """Typed pages; those in `math_pages` also carry equations set in the Symbol font."""
+    document = pymupdf.open()
+    for number in range(1, pages + 1):
+        page = document.new_page()
+        page.insert_text((72, 72), f"Lecture notes, page {number}: kinetic energy.", fontsize=11)
+        if number in math_pages:
+            for i in range(6):  # Greek and operators in a math font, as TeX output has
+                page.insert_text((72, 110 + 24 * i), "a b g d S p", fontname="symb", fontsize=12)
+    data = document.tobytes()
+    document.close()
+    return data

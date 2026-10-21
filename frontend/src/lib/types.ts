@@ -25,7 +25,7 @@ export interface NoteDocument {
   status: DocumentStatus;
   progress: number;
   page_count: number | null;
-  transcribed_pages: number; // pages read from handwriting or scans
+  transcribed_pages: number; // pages read from their image: handwriting, scans, math
   error: string | null;
   created_at: string;
 }

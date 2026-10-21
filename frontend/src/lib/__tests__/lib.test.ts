@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { splitCitations } from "@/components/AnswerText";
+import { prepareMarkdown, splitCitations } from "@/lib/markdown";
 import { errorMessage } from "@/lib/api";
 import { safeNext } from "@/lib/auth";
 import { SSEParser } from "@/lib/sse";
@@ -47,6 +47,25 @@ describe("splitCitations", () => {
 
   it("leaves other brackets as text", () => {
     expect(splitCitations("a[1] and <script>")).toEqual([{ text: "a[1] and <script>" }]);
+  });
+});
+
+describe("prepareMarkdown", () => {
+  it("turns citation markers into chip links", () => {
+    expect(prepareMarkdown("ATP synthase [S1][S3].")).toBe("ATP synthase [S1](#cite-S1)[S3](#cite-S3).");
+  });
+
+  it("normalises LaTeX delimiters for remark-math", () => {
+    expect(prepareMarkdown(String.raw`so \(E = mc^2\) holds`)).toBe("so $E = mc^2$ holds");
+    expect(prepareMarkdown(String.raw`\[ \int_0^1 x\,dx \]`)).toBe(String.raw`
+$$
+\int_0^1 x\,dx
+$$
+`);
+  });
+
+  it("leaves real links and other brackets alone", () => {
+    expect(prepareMarkdown("[S1](#cite-S1) and a[1]")).toBe("[S1](#cite-S1) and a[1]");
   });
 });
 

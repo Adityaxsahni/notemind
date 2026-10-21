@@ -28,6 +28,7 @@ from app.ingestion.ocr import (
     get_ocr_provider,
     load_photo,
     make_transcriber,
+    math_pages,
     needs_transcription,
     render_pdf_pages,
 )
@@ -119,9 +120,11 @@ def _transcribe_image_pages(
     pages: list[Page],
     transcriber_for: Callable[[uuid.UUID], Transcriber],
 ) -> tuple[list[Page], int]:
-    """Replace pages that are pictures of text (handwriting, scans, photos) with their
-    transcription. Returns the pages and how many were transcribed."""
+    """Replace pages that are pictures of text (handwriting, scans, photos), and typed
+    pages of math, with their transcription. Returns the pages and how many were
+    transcribed. Math pages are a bonus: without transcription they keep their text."""
     images: list[PageImage]
+    optional: set[int] = set()  # pages that still have usable text without transcription
     if document.kind == DocumentKind.IMAGE:
         images = [load_photo(path)]
     elif document.kind == DocumentKind.PDF:
@@ -129,11 +132,18 @@ def _transcribe_image_pages(
         limit = get_settings().ocr_max_pages
         if len(numbers) > limit:
             raise ExtractionError(TOO_MANY_SCANNED_PAGES.format(limit))
-        images = list(render_pdf_pages(path, numbers))
+        typed = [p.number for p in pages if not needs_transcription(p.text)]
+        optional = set(math_pages(path, typed)[: limit - len(numbers)])
+        images = [
+            *render_pdf_pages(path, numbers),
+            *render_pdf_pages(path, sorted(optional), with_text=True),
+        ]
     else:
         return pages, 0  # picture-only slides and Word pages are diagrams, not notes
     if not images:
         return pages, 0
+
+    images.sort(key=lambda image: image.number)
 
     def progress(done: int) -> None:
         document.progress = 15 + 25 * done // len(images)
@@ -143,11 +153,12 @@ def _transcribe_image_pages(
         texts = transcriber_for(document.uploaded_by).transcribe(images, on_progress=progress)
     except tuple(TRANSCRIPTION_FAILURES) as exc:
         typed = sum(1 for p in pages if not needs_transcription(p.text))
-        if typed >= len(images):
+        needed = [image for image in images if image.number not in optional]
+        if typed >= len(needed):
             logger.warning(
                 "indexing document_id=%s without %d image pages: %s",
                 document.id,
-                len(images),
+                len(needed),
                 type(exc).__name__,
             )
             return pages, 0
@@ -155,7 +166,8 @@ def _transcribe_image_pages(
 
     by_number = {p.number: p for p in pages}
     for number, text in texts.items():
-        by_number[number] = Page(number=number, text=text)
+        if text.strip() or number not in optional:  # an empty reply never erases typed text
+            by_number[number] = Page(number=number, text=text)
     transcribed = sum(1 for text in texts.values() if text.strip())
     logger.info("transcribed document_id=%s pages=%d", document.id, transcribed)
     return sorted(by_number.values(), key=lambda p: p.number), transcribed

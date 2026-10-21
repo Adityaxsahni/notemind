@@ -89,7 +89,7 @@ export function CollectionView() {
             {documents.length} {documents.length === 1 ? "file" : "files"} ·{" "}
             {documents.reduce((n, d) => n + (d.page_count ?? 0), 0)} pages
             {documents.some((d) => d.transcribed_pages > 0) &&
-              ` · ${documents.reduce((n, d) => n + d.transcribed_pages, 0)} handwritten`}
+              ` · ${documents.reduce((n, d) => n + d.transcribed_pages, 0)} transcribed`}
           </p>
         </div>
         {isOwner && (

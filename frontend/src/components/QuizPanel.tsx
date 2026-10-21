@@ -7,6 +7,7 @@ import { useApiErrorHandler } from "@/lib/auth";
 import type { Quiz, QuizQuestion } from "@/lib/types";
 
 import { Alert, Button, Card, Input, Spinner } from "./ui";
+import { MathText } from "./AnswerText";
 
 type State =
   | { phase: "idle" }
@@ -127,7 +128,7 @@ function QuestionCard({
   return (
     <fieldset className="space-y-2">
       <legend className="text-sm font-medium">
-        {number}. {question.question}
+        {number}. <MathText>{question.question}</MathText>
       </legend>
       <div className="grid gap-2">
         {question.options.map((option, i) => {
@@ -148,7 +149,7 @@ function QuestionCard({
               aria-pressed={i === picked}
               className={`rounded-xl border bg-surface px-3.5 py-2.5 text-left text-sm transition ${tone}`}
             >
-              {option}
+              <MathText>{option}</MathText>
               {done && isAnswer && <span className="sr-only"> (correct answer)</span>}
             </button>
           );
@@ -157,7 +158,7 @@ function QuestionCard({
       {done && (
         <p className="text-sm text-muted">
           {picked === question.answer ? "Correct. " : "Not quite. "}
-          {question.explanation}{" "}
+          <MathText>{question.explanation}</MathText>{" "}
           <a href={documentFileUrl(collectionId, question.citation.document_id)} className="text-accent hover:underline">
             {question.citation.document_title}, page {question.citation.page}
           </a>

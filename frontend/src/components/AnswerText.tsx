@@ -1,41 +1,70 @@
+import "katex/dist/katex.min.css";
+
+import type { ReactNode } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import rehypeKatex from "rehype-katex";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+
+import { CITATION_HREF, prepareMarkdown } from "@/lib/markdown";
 import type { Citation } from "@/lib/types";
 
-const CITATION = /(\[S\d+\])/;
+// Model output is untrusted (an uploaded document can steer it, threat T7). It's rendered as
+// Markdown into React elements: raw HTML is dropped (`skipHtml`), links other than our own
+// citation chips become plain text (no phishing links), images are never loaded, and KaTeX
+// runs with `trust: false`, so \href, \url and similar commands do nothing.
+const KATEX = { throwOnError: false, strict: "ignore", trust: false, output: "htmlAndMathml" } as const;
 
-/** Split answer text into plain text and [S#] markers (exported for tests). */
-export function splitCitations(text: string): Array<{ text: string; sourceId?: string }> {
-  return text
-    .split(CITATION)
-    .filter(Boolean)
-    .map((part) => {
-      const match = /^\[(S\d+)\]$/.exec(part);
-      return match ? { text: part, sourceId: match[1] } : { text: part };
-    });
+function components(citations: Citation[]): Components {
+  const byId = new Map(citations.map((c) => [c.id, c]));
+  return {
+    a({ href, children }) {
+      if (!href?.startsWith(CITATION_HREF)) return <span>{children}</span>;
+      const id = href.slice(CITATION_HREF.length);
+      const citation = byId.get(id);
+      const label = citation ? `${citation.document_title}, page ${citation.page}` : id;
+      return (
+        <a
+          href={citation ? `#cite-${citation.id}` : undefined}
+          title={label}
+          className="mx-0.5 inline-flex -translate-y-px items-center rounded-full bg-accent px-1.5 align-baseline font-mono text-xs text-accent-foreground no-underline"
+        >
+          {citation ? `p.${citation.page}` : id}
+        </a>
+      );
+    },
+    img: () => null,
+  };
 }
 
-/**
- * Renders model output as React text nodes only, never as HTML, so nothing an uploaded
- * document smuggles into an answer can become markup or script (threat T7).
- */
+/** A streamed or finished answer: Markdown with LaTeX math and [S#] citation chips. */
 export function AnswerText({ text, citations }: { text: string; citations: Citation[] }) {
-  const byId = new Map(citations.map((c) => [c.id, c]));
   return (
-    <p className="whitespace-pre-wrap leading-7">
-      {splitCitations(text).map((part, i) => {
-        if (!part.sourceId) return <span key={i}>{part.text}</span>;
-        const citation = byId.get(part.sourceId);
-        const label = citation ? `${citation.document_title}, page ${citation.page}` : part.sourceId;
-        return (
-          <a
-            key={i}
-            href={citation ? `#cite-${citation.id}` : undefined}
-            title={label}
-            className="mx-0.5 inline-flex -translate-y-px items-center rounded-full bg-accent px-1.5 font-mono text-xs text-accent-foreground no-underline"
-          >
-            {citation ? `p.${citation.page}` : part.sourceId}
-          </a>
-        );
-      })}
-    </p>
+    <div className="answer">
+      <ReactMarkdown
+        skipHtml
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[[rehypeKatex, KATEX]]}
+        components={components(citations)}
+      >
+        {prepareMarkdown(text)}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+/** Short model-written text (quiz questions, options, explanations) with inline math. */
+export function MathText({ children }: { children: string }): ReactNode {
+  return (
+    <span className="answer answer-inline">
+      <ReactMarkdown
+        skipHtml
+        remarkPlugins={[remarkMath]}
+        rehypePlugins={[[rehypeKatex, KATEX]]}
+        components={{ ...components([]), p: ({ children: inner }) => <>{inner}</> }}
+      >
+        {prepareMarkdown(children)}
+      </ReactMarkdown>
+    </span>
   );
 }

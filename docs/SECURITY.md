@@ -17,6 +17,7 @@ with steps to reproduce. Please don't open a public issue for security problems.
 | **IDOR protection**: lookups filter on parent and child id; strangers get 404 | `app/authz.py`, `api/documents.py`, `api/invites.py` | stranger/viewer tests per endpoint + RLS |
 | **Never trust the frontend**: Pydantic validation, server-side authz, size limits while streaming, magic-byte checks, forwarded IP trusted only from the proxy | `schemas.py`, `api/*`, compose | validation, upload and spoofed-header tests |
 | **Rate limiting**: global per-IP ceiling plus tighter per-route limits | `app/rate_limit.py` | `test_global_rate_limit…`, per-route tests |
+| **Rendering model output**: Markdown to React elements only; raw HTML skipped, links other than citation chips shown as text, images never loaded, KaTeX with `trust: false` (no `\href`) | `components/AnswerText.tsx`, `lib/markdown.ts` | unit tests (`prepareMarkdown`), Playwright |
 | **Input sanitization**: control and bidi characters rejected; filenames sanitized; document text HTML-escaped into prompts; React text rendering only | `schemas.py`, `ingestion/validation.py`, `rag/answer.py` | `test_control_characters_are_rejected`, injection tests |
 | **Parameterized queries**: SQLAlchemy everywhere; ruff `S608` blocks string-built SQL | all | ruff in pre-commit and CI |
 | **CORS locked down**: off by default, exact origins only, `*` refused | `main.py`, `config.py` | `test_cors_is_off…`, `test_wildcard_cors…` |

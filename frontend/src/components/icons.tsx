@@ -97,6 +97,47 @@ export const ArrowRightIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const DocumentIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+    <path d="M14 3v5h5M9 13h6M9 17h4" />
+  </Icon>
+);
+
+export const SlidesIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="4" width="18" height="12" rx="2" />
+    <path d="M12 16v4M8 20h8M7 12l3-3 2 2 4-4" />
+  </Icon>
+);
+
+export const CameraIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+    <circle cx="12" cy="13" r="3.5" />
+  </Icon>
+);
+
+export const PenIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 20l4-1 11-11a2.1 2.1 0 0 0-3-3L5 16z" />
+    <path d="M14 7l3 3M4 20h16" />
+  </Icon>
+);
+
+export const SigmaIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M18 6V4H6l7 8-7 8h12v-2" />
+  </Icon>
+);
+
+export const BookIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" />
+    <path d="M4 21V5M8 7h7M8 11h5" />
+  </Icon>
+);
+
 export function Logo({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 32 32" aria-hidden="true" className={className} width={28} height={28}>

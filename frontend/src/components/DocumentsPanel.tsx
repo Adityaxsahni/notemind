@@ -152,7 +152,7 @@ export function DocumentsPanel({
                     </p>
                     {document.transcribed_pages > 0 && (
                       <Chip tone="tag" className="!py-0.5">
-                        ✎ {document.transcribed_pages} handwritten
+                        ✎ {document.transcribed_pages} transcribed
                       </Chip>
                     )}
                   </div>

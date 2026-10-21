@@ -60,9 +60,9 @@ export default function OpenGraphImage() {
           }}
         >
           <div style={{ display: "flex", flexDirection: "column", background: "#fefdf9", padding: 28 }}>
-            <div style={{ fontSize: 40 }}>Cell Biology</div>
+            <div style={{ fontSize: 40 }}>Your library</div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
-              <span style={{ fontSize: 18, color: "#5f5a4f" }}>412 pages · cited</span>
+              <span style={{ fontSize: 18, color: "#5f5a4f" }}>pdf · slides · photos · math</span>
               <span
                 style={{
                   background: "#c8391c",
@@ -72,7 +72,7 @@ export default function OpenGraphImage() {
                   fontSize: 20,
                 }}
               >
-                Enter
+                Upload
               </span>
             </div>
           </div>

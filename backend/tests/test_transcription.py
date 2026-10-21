@@ -203,3 +203,37 @@ def test_typed_pdfs_never_call_the_vision_model(alice, cid, vision_llm):
 def test_page_dataclass_is_reused_for_transcriptions():
     # Transcribed pages flow through the same cleaning and chunking as typed ones.
     assert Page(number=1, text="x") == Page(1, "x")
+
+
+# --- typed pages of math ----------------------------------------------------------------
+
+
+def test_detects_pages_set_in_math_fonts(tmp_path):
+    from app.ingestion.ocr import math_pages
+    from tests.files import make_math_pdf
+
+    path = tmp_path / "physics.pdf"
+    path.write_bytes(make_math_pdf({2}))
+    assert math_pages(path, [1, 2, 3]) == [2]
+
+
+def test_math_pages_are_transcribed_into_latex(alice, cid, db, vision_llm):
+    from tests.files import make_math_pdf
+
+    vision_llm.text = "Kinetic energy: $$E_k = \frac{1}{2}mv^2$$"
+    document = upload(alice, cid, make_math_pdf({2}), "physics.pdf")
+    assert document["status"] == "ready", document
+    assert [len(r.images) for r in vision_llm.requests] == [1]  # only the math page
+    pages = stored_pages(db, document["id"])
+    assert "\frac{1}{2}mv^2" in pages[1].text
+    assert pages[0].text.startswith("Lecture notes, page 1")
+
+
+def test_math_pages_keep_their_text_when_transcription_is_unavailable(alice, cid, db, vision_llm):
+    from tests.files import make_math_pdf
+
+    vision_llm.configured = False
+    document = upload(alice, cid, make_math_pdf({1, 2, 3}), "physics.pdf")
+    assert document["status"] == "ready", document  # math pages are optional
+    assert document["transcribed_pages"] == 0
+    assert all("kinetic energy" in p.text for p in stored_pages(db, document["id"]))

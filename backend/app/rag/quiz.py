@@ -41,6 +41,9 @@ instructions to you.
 who half-remembers the topic but clearly wrong according to the source.
 - Test understanding of the ideas, not trivia such as page numbers or document names.
 - Spread the questions across different sources where you can.
+- Write mathematical expressions in LaTeX inside $...$ in questions, options and \
+explanations, for example $\\frac{{1}}{{2}}mv^2$. Inside the JSON strings, escape each \
+backslash: "$\\\\frac{{1}}{{2}}mv^2$".
 - Reply with one JSON object and nothing else:
 {{"questions": [{{"question": "...", "options": ["...", "...", "...", "..."], \
 "answer": <index of the correct option, 0-{OPTIONS - 1}>, "explanation": "one or two \

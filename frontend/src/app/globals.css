@@ -249,3 +249,104 @@ body {
 .legal strong {
   color: var(--foreground);
 }
+
+/* --- Answers (Markdown + KaTeX from components/AnswerText.tsx) ------------------------- */
+
+.answer {
+  line-height: 1.75;
+  color: var(--foreground);
+}
+.answer > * + * {
+  margin-top: 0.75rem;
+}
+.answer h1,
+.answer h2,
+.answer h3,
+.answer h4 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1.15;
+  margin-top: 1.25rem;
+}
+.answer h1,
+.answer h2 {
+  font-size: 1.6rem;
+}
+.answer h3,
+.answer h4 {
+  font-size: 1.3rem;
+}
+.answer strong {
+  font-weight: 600;
+}
+.answer ul,
+.answer ol {
+  padding-left: 1.4rem;
+}
+.answer ul {
+  list-style: disc;
+}
+.answer ol {
+  list-style: decimal;
+}
+.answer li + li {
+  margin-top: 0.35rem;
+}
+.answer li::marker {
+  color: var(--muted);
+}
+.answer blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 0.9rem;
+  color: var(--ink-soft);
+}
+.answer code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--chip);
+  border-radius: 0.3rem;
+  padding: 0.05rem 0.3rem;
+}
+.answer pre {
+  overflow-x: auto;
+  background: var(--chip);
+  border-radius: 0.75rem;
+  padding: 0.75rem 0.9rem;
+}
+.answer pre code {
+  background: none;
+  padding: 0;
+}
+.answer table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  display: block;
+  overflow-x: auto;
+}
+.answer th,
+.answer td {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+.answer th {
+  background: var(--surface-2);
+  font-weight: 600;
+}
+/* Display equations: centred, scroll sideways inside the card rather than widening the
+   page on phones. */
+.answer .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.6rem 0.25rem;
+  margin: 0.75rem 0;
+  background: var(--surface-2);
+  border-radius: 0.75rem;
+}
+.answer .katex {
+  font-size: 1.08em;
+}
+.answer-inline > * + * {
+  margin-top: 0;
+}

@@ -1,7 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { ArrowRightIcon } from "@/components/icons";
+import {
+  ArrowRightIcon,
+  BookIcon,
+  CameraIcon,
+  CiteIcon,
+  DocumentIcon,
+  PenIcon,
+  SearchOffIcon,
+  SigmaIcon,
+  SlidesIcon,
+} from "@/components/icons";
 import { Chip, Eyebrow, HatchTile } from "@/components/ui";
 import { SITE_DESCRIPTION } from "@/lib/site";
 
@@ -11,11 +21,24 @@ export const metadata: Metadata = {
   alternates: { canonical: "/" },
 };
 
+const FORMATS = [
+  { icon: DocumentIcon, name: "PDF", meta: "up to 200 mb" },
+  { icon: SlidesIcon, name: "Slides", meta: "speaker notes too" },
+  { icon: CameraIcon, name: "Photos", meta: "handwriting read" },
+  { icon: SigmaIcon, name: "Math", meta: "kept as formulas" },
+];
+
 const FACTS = [
-  { label: "Source", value: "Lecture 7, page 12" },
-  { label: "First words in", value: "~1.5 seconds" },
-  { label: "Read from", value: "Handwritten notes" },
-  { label: "Right now", value: "Grounded", dot: true },
+  { label: "Every claim", value: "Cited to its page" },
+  { label: "First words in", value: "About 2 seconds" },
+  { label: "Reads", value: "Typed, handwritten, math" },
+  { label: "Right now", value: "Grounded in your notes", dot: true },
+];
+
+const ANSWER_TRAITS = [
+  { icon: CiteIcon, title: "Cited", text: "Every statement links to the page it came from." },
+  { icon: SigmaIcon, title: "Exact math", text: "Formulas appear properly typeset, not as garbled text." },
+  { icon: SearchOffIcon, title: "Honest", text: "If your notes don't cover it, NoteMind says so." },
 ];
 
 const STEPS = [
@@ -76,54 +99,70 @@ export default function LandingPage() {
           <p className="meta mt-5">no credit card · delete your account and data any time</p>
         </div>
 
-        {/* The course picker, as on the app's first screen. */}
+        {/* One library for every kind of note. */}
         <div className="animate-rise mx-auto w-full max-w-sm [animation-delay:240ms]">
           <div className="overflow-hidden rounded-2xl border-[1.5px] border-foreground bg-surface shadow-card-lg">
-            <HatchTile caption="lecture 7 · krebs cycle, handwritten" className="h-40" />
+            <HatchTile caption="your notes, in one place" className="grid h-40 place-items-center">
+              <span className="grid size-20 place-items-center rounded-full bg-background text-foreground shadow-card">
+                <BookIcon className="size-9" />
+              </span>
+            </HatchTile>
             <div className="flex items-end justify-between gap-3 p-4">
               <div>
-                <p className="display text-3xl">Cell Biology</p>
-                <p className="meta mt-1">412 pages · 1,180 passages</p>
+                <p className="display text-3xl">Your library</p>
+                <p className="meta mt-1">one course per collection</p>
               </div>
               <span className="rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-accent-foreground">
-                Enter
+                Upload
               </span>
             </div>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            {[
-              ["Organic Chem", "indexing"],
-              ["Physics II", "queued"],
-            ].map(([name, state]) => (
-              <div key={name} className="rounded-2xl border border-dashed border-faint p-3.5">
-                <p className="display text-xl text-muted">{name}</p>
-                <p className="label-mono mt-1">{state}</p>
-              </div>
+          <ul className="mt-3 grid grid-cols-2 gap-3">
+            {FORMATS.map(({ icon: Icon, name, meta }) => (
+              <li key={name} className="flex items-center gap-3 rounded-2xl border border-dashed border-faint p-3.5">
+                <span className="grid size-9 shrink-0 place-items-center rounded-full bg-chip text-foreground">
+                  <Icon className="size-[18px]" />
+                </span>
+                <div className="min-w-0">
+                  <p className="display text-xl leading-none">{name}</p>
+                  <p className="label-mono mt-1">{meta}</p>
+                </div>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       </section>
 
-      {/* An answer, laid out like a place's detail screen. */}
+      {/* What an answer gives you, laid out like a detail screen. */}
       <section aria-labelledby="answer" className="reveal mx-auto max-w-6xl px-4 sm:px-6">
         <div className="grid overflow-hidden rounded-3xl border border-border bg-surface lg:grid-cols-2">
-          <HatchTile caption="your notes, page 12" className="min-h-56 lg:min-h-full">
+          <HatchTile caption="every answer, checked against your pages" className="grid min-h-56 place-items-center lg:min-h-full">
             <span className="absolute right-4 top-4 rounded-full bg-background px-4 py-1.5 text-sm font-medium">
-              Saved
+              Cited
             </span>
             <Chip tone="accent" className="absolute left-4 top-4">
-              picked from your notes
+              from your notes only
             </Chip>
+            <div className="flex gap-3">
+              {ANSWER_TRAITS.map(({ icon: Icon, title }) => (
+                <span
+                  key={title}
+                  className="grid size-16 place-items-center rounded-2xl bg-background text-foreground shadow-card sm:size-20"
+                >
+                  <Icon className="size-8" />
+                </span>
+              ))}
+            </div>
           </HatchTile>
           <div className="p-6 sm:p-8">
-            <Eyebrow>Biology 101</Eyebrow>
+            <Eyebrow>Every answer</Eyebrow>
             <h2 id="answer" className="display mt-2 text-4xl sm:text-5xl">
-              How do mitochondria make ATP?
+              Clear, cited, and <em>exact</em>.
             </h2>
             <div className="mt-4 flex flex-wrap gap-2">
-              <Chip tone="tag">from your notes</Chip>
-              <Chip tone="tag">two sources</Chip>
-              <Chip tone="tag">exam favourite</Chip>
+              <Chip tone="tag">steps and key terms</Chip>
+              <Chip tone="tag">formulas typeset</Chip>
+              <Chip tone="tag">page citations</Chip>
             </div>
             <dl className="mt-6 grid grid-cols-2 overflow-hidden rounded-2xl border border-border">
               {FACTS.map(({ label, value, dot }, i) => (
@@ -139,17 +178,18 @@ export default function LandingPage() {
                 </div>
               ))}
             </dl>
-            <p className="label-mono mt-6">What your notes said</p>
-            <blockquote className="mt-2 flex gap-3">
-              <span aria-hidden className="mt-1 size-7 shrink-0 rounded-full bg-chip" />
-              <div>
-                <p className="text-sm leading-relaxed text-ink-soft">
-                  &ldquo;The electron transport chain pumps protons across the inner membrane; ATP synthase
-                  uses that gradient to make ATP.&rdquo;
-                </p>
-                <p className="meta mt-1">lecture 7 · page 12 · handwritten</p>
-              </div>
-            </blockquote>
+            <ul className="mt-6 space-y-3">
+              {ANSWER_TRAITS.map(({ icon: Icon, title, text }) => (
+                <li key={title} className="flex gap-3">
+                  <span className="grid size-8 shrink-0 place-items-center rounded-full bg-chip text-foreground">
+                    <Icon className="size-4" />
+                  </span>
+                  <p className="text-sm leading-relaxed text-ink-soft">
+                    <span className="font-semibold text-foreground">{title}.</span> {text}
+                  </p>
+                </li>
+              ))}
+            </ul>
             <div className="mt-6 flex items-center gap-3">
               <Link
                 href="/signup"
@@ -198,34 +238,55 @@ export default function LandingPage() {
         </ol>
       </section>
 
-      {/* Handwriting, drawn like the map screen: grid paper, a pin, a dark tooltip. */}
+      {/* Handwriting: photo in, searchable text out. */}
       <section aria-labelledby="handwriting" className="reveal mx-auto mt-24 max-w-6xl px-4 sm:px-6">
         <div className="grid items-center gap-10 lg:grid-cols-2">
           <div>
-            <Eyebrow>New · handwriting</Eyebrow>
+            <Eyebrow>Handwriting and math</Eyebrow>
             <h2 id="handwriting" className="display mt-2 text-5xl">
               Photos of the whiteboard <em>count</em> too.
             </h2>
             <p className="mt-4 max-w-md leading-relaxed text-ink-soft">
               Upload scanned or handwritten PDFs, or snap a photo of your notebook. NoteMind reads the
-              handwriting, keeps the page numbers, and cites it like any typed page.
+              handwriting and the equations, keeps the page numbers, and cites them like any typed page.
             </p>
             <p className="meta mt-4">jpg · png · webp · scanned pdf · up to 300 handwritten pages per file</p>
           </div>
-          <div className="grid-paper relative h-72 overflow-hidden rounded-3xl border border-border">
-            <div aria-hidden className="absolute -left-10 top-24 h-6 w-[130%] -rotate-6 bg-[#d8cfb8]" />
-            <div aria-hidden className="absolute -left-10 top-52 h-5 w-[130%] rotate-3 bg-[#d8cfb8]" />
-            <div className="absolute right-6 top-6 grid h-24 w-36 place-items-center rounded-2xl bg-sage">
-              <span className="display text-xl italic text-ink-soft">Krebs cycle</span>
-            </div>
-            <div className="absolute left-[18%] top-[28%] rounded-xl bg-foreground px-3 py-2 text-background shadow-card-lg">
-              <p className="text-sm font-semibold">Page 3, transcribed</p>
-              <p className="font-mono text-[0.625rem] text-background/70">handwritten · 412 words</p>
-            </div>
-            <span aria-hidden className="pin absolute left-[30%] top-[52%] size-2.5 rounded-full bg-accent" />
-            <div className="absolute inset-x-4 bottom-4 rounded-2xl bg-background p-3.5 shadow-card">
-              <p className="label-mono text-accent">from your photo</p>
-              <p className="mt-1 text-sm font-medium">Acetyl-CoA → citrate → … → oxaloacetate</p>
+          <div className="grid-paper relative overflow-hidden rounded-3xl border border-border p-6 sm:p-8">
+            <ol className="flex items-center justify-between gap-2">
+              {[
+                { icon: CameraIcon, label: "Photo or scan" },
+                { icon: PenIcon, label: "Handwriting read" },
+                { icon: DocumentIcon, label: "Searchable page" },
+              ].map(({ icon: Icon, label }, i) => (
+                <li key={label} className="flex flex-1 items-center gap-2">
+                  <div className="flex flex-1 flex-col items-center gap-2 text-center">
+                    <span
+                      className={`grid size-16 place-items-center rounded-2xl shadow-card ${
+                        i === 1 ? "bg-foreground text-background" : "bg-background text-foreground"
+                      }`}
+                    >
+                      <Icon className="size-7" />
+                    </span>
+                    <span className="label-mono !text-foreground">{label}</span>
+                  </div>
+                  {i < 2 && <ArrowRightIcon aria-hidden className="size-5 shrink-0 text-muted" />}
+                </li>
+              ))}
+            </ol>
+            <div className="mt-6 rounded-2xl bg-background p-4 shadow-card">
+              <div className="flex items-center gap-2">
+                <span aria-hidden className="pin size-2 rounded-full bg-accent" />
+                <p className="label-mono !text-accent">Ready to search</p>
+              </div>
+              <div aria-hidden className="mt-3 space-y-2">
+                <div className="h-2 w-11/12 rounded-full bg-chip" />
+                <div className="h-2 w-9/12 rounded-full bg-chip" />
+                <div className="flex items-center gap-2">
+                  <SigmaIcon className="size-4 text-muted" />
+                  <div className="h-2 w-6/12 rounded-full bg-chip" />
+                </div>
+              </div>
             </div>
           </div>
         </div>
