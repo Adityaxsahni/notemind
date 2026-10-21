@@ -360,3 +360,10 @@ def test_gateway_reservation_covers_worst_case(llm, redis):
     assert isinstance(reservation, Reservation)
     assert reservation.tokens == 200 + 1000  # 600 chars / 3 + max_tokens
     assert redis.ttl(reservation.user_key) > 24 * 3600
+
+
+def test_stream_is_not_compressed_or_cached_by_proxies(alice, cid):
+    # gzip in a proxy buffers server-sent events until the answer ends.
+    cache_control = ask(alice, cid).headers["cache-control"]
+    assert "no-store" in cache_control
+    assert "no-transform" in cache_control

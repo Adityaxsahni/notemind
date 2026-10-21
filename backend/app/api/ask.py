@@ -66,8 +66,10 @@ def ask(
     return StreamingResponse(
         _sse(events),
         media_type="text/event-stream",
-        # no-store: answers are private; X-Accel-Buffering: let proxies pass tokens through.
-        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        # no-store: answers are private. no-transform: compressing proxies (including the
+        # Next.js server in front of us) must not gzip the stream, because gzip buffers tokens
+        # until the end. X-Accel-Buffering: nginx-style proxies pass tokens straight through.
+        headers={"Cache-Control": "no-store, no-transform", "X-Accel-Buffering": "no"},
     )
 
 

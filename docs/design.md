@@ -37,7 +37,7 @@ exact page, and turns that material into quizzes.
 
 | Area | Requirement |
 |---|---|
-| Upload limits | ≤ 20 MB per file, ≤ 300 pages/slides, ≤ 200 MB total per user (free tier) |
+| Upload limits | ≤ 200 MB per file, ≤ 2,000 pages/slides, ≤ 1 GB total per user (free tier) |
 | Ingestion speed | 100-page text PDF ready to query in < 60 s (p95) |
 | Retrieval latency | p95 < 300 ms for hybrid search + rerank |
 | Answer latency | time-to-first-token < 2 s (p95); full answer streamed |
@@ -138,7 +138,7 @@ links, admin/ops access, third-party LLM API.
 | Citation check | **Streaming filter drops any `[S#]` that doesn't name a provided source**; answers with no valid citation are flagged `grounded: false` | Check after the full answer | Invented citations never reach the screen, even mid-stream |
 | Answer cache | **Redis, keyed on (collection, document count + last change, normalized question)**, 24 h TTL | Semantic cache | Exact repeats ("what is 3NF" before an exam) are common; any upload/delete/re-index changes the key, so stale answers can't be served |
 | Answer model | **`claude-opus-5-5` at low effort, server-side refusal fallback on** (config: `LLM_ANSWER_MODEL`) | Smaller/cheaper model | Anthropic's recommended default. ~$0.02 per answered question at typical sizes, above the ₹15/user/month target for heavy users; Phase 7 measures whether a cheaper model holds answer quality |
-| Frontend ↔ API | **Same origin: Next.js rewrites API paths to FastAPI**; answers stream over `fetch` (POST + SSE) | Browser calls the API origin directly with CORS | Auth cookies stay first-party (`SameSite=Strict`, refresh cookie scoped to `/auth`), works in every browser over plain-http localhost, and matches a single-domain production deploy. Proxy body limit raised to 21 MB so the backend enforces the 20 MB upload limit |
+| Frontend ↔ API | **Same origin: Next.js rewrites API paths to FastAPI**; answers stream over `fetch` (POST + SSE) | Browser calls the API origin directly with CORS | Auth cookies stay first-party (`SameSite=Strict`, refresh cookie scoped to `/auth`), works in every browser over plain-http localhost, and matches a single-domain production deploy. Proxy body limit raised to 201 MB so the backend enforces the 200 MB upload limit |
 | Rendering model output | **React text nodes + citation chips only; no Markdown/HTML rendering**; static CSP on pages | Markdown renderer | An uploaded document could steer the model into emitting markup; with no HTML path there is nothing to sanitize. Nonce-based CSP is a later hardening step (needs `proxy.ts`) |
 | Model supply chain | **Exact Hub commit pinned, weights baked into the image, `HF_HUB_OFFLINE=1` at runtime**, CPU-only torch wheels | Download `main` on first use | A re-pushed model can't change behaviour silently; containers need no internet; image avoids ~2 GB of unused CUDA libraries |
 

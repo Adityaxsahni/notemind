@@ -15,8 +15,8 @@ Enqueue = Callable[[uuid.UUID], None]
 INGESTION_QUEUE = "ingestion"  # parses untrusted files: forked, memory-capped work-horse
 INDEXING_QUEUE = "indexing"  # chunks + embeds extracted text: keeps the model loaded
 
-INGESTION_TIMEOUT_SECONDS = 180
-INDEXING_TIMEOUT_SECONDS = 600
+INGESTION_TIMEOUT_SECONDS = 900  # a 200 MB, 2000-page PDF
+INDEXING_TIMEOUT_SECONDS = 1800  # embedding ~10k chunks on CPU
 
 _ON_FAILURE = Callback("app.ingestion.tasks.on_job_failure")
 

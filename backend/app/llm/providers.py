@@ -140,8 +140,12 @@ class GeminiProvider:
             api_key=api_key,
             http_options=genai_types.HttpOptions(
                 timeout=int(timeout * 1000),  # milliseconds
-                # Retries 408/429/5xx with exponential backoff; attempts include the first.
-                retry_options=genai_types.HttpRetryOptions(attempts=max_retries + 1),
+                # Retries timeouts and 5xx with exponential backoff; attempts include the first.
+                # Not 429: Gemini quotas are per minute or per day, so a retry seconds later
+                # fails again and, on the free tier, uses up more of the quota.
+                retry_options=genai_types.HttpRetryOptions(
+                    attempts=max_retries + 1, http_status_codes=[408, 500, 502, 503, 504]
+                ),
             ),
         )
         self._model = model

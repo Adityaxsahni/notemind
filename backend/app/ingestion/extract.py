@@ -18,7 +18,7 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 from app.models import DocumentKind
 
-MAX_PAGES = 300
+MAX_PAGES = 2000
 DOCX_SECTION_CHARS = 4000
 
 

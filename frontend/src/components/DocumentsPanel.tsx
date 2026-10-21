@@ -10,7 +10,7 @@ import { Alert, Button, Card, ProgressBar, Spinner } from "./ui";
 
 // Mirrors the backend limits for instant feedback; the server still enforces them.
 const ACCEPTED = [".pdf", ".docx", ".pptx"];
-const MAX_BYTES = 20 * 1024 * 1024;
+const MAX_BYTES = 200 * 1024 * 1024;
 
 export function DocumentsPanel({
   collectionId,
@@ -47,7 +47,7 @@ export function DocumentsPanel({
         continue;
       }
       if (file.size > MAX_BYTES) {
-        problems.push(`${file.name}: files can be at most 20 MB.`);
+        problems.push(`${file.name}: files can be at most 200 MB.`);
         continue;
       }
       setUploading(file.name);
@@ -102,7 +102,7 @@ export function DocumentsPanel({
 
       {documents.length === 0 ? (
         <p className="text-sm text-muted">
-          {canEdit ? "PDF, Word or PowerPoint files, up to 20 MB each." : "No notes in this collection yet."}
+          {canEdit ? "PDF, Word or PowerPoint files, up to 200 MB each." : "No notes in this collection yet."}
         </p>
       ) : (
         <ul className="divide-y divide-border">

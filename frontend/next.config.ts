@@ -31,8 +31,8 @@ const nextConfig: NextConfig = {
   output: "standalone",
   experimental: {
     // The rewrite proxy cuts request bodies at 10 MB by default. Let uploads through to the
-    // backend, which enforces the real 20 MB limit while streaming.
-    proxyClientMaxBodySize: "21mb",
+    // backend, which enforces the real 200 MB limit while streaming.
+    proxyClientMaxBodySize: "201mb",
   },
   turbopack: {
     rules: {

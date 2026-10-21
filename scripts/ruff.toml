@@ -1,0 +1,5 @@
+# Same rules as the backend; dev scripts may hold long sample-text lines.
+extend = "../backend/pyproject.toml"
+
+[lint]
+extend-ignore = ["E501"]

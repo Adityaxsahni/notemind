@@ -61,6 +61,20 @@ The browser only talks to the frontend's origin. Next.js forwards `/auth`, `/me`
 `/collections`, `/invites` and `/health` to the backend (`BACKEND_URL`, default
 `http://127.0.0.1:8000`), so the httpOnly auth cookies stay first-party and no CORS is needed.
 
+## Check that it works
+
+With the stack running, an end-to-end smoke test drives the app through the frontend the
+way a browser does. It builds a 1,500-page, ~196 MB PDF (just under the 200 MB upload
+limit), uploads it, waits for indexing, then checks search, cited answers, refusals,
+quizzes, the size limit, sharing, export and account deletion:
+
+```bash
+uv run --project backend python scripts/make_big_pdf.py course-pack.pdf
+uv run --project backend python scripts/smoke_test.py course-pack.pdf   # a few LLM calls
+```
+
+On a laptop CPU the 196 MB PDF is searchable about 45 s after upload.
+
 ## Tests
 
 ```bash

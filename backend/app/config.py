@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
 
     upload_dir: Path = Path("data/uploads")
-    max_upload_bytes: int = 20 * 1024 * 1024
-    user_storage_quota_bytes: int = 200 * 1024 * 1024
+    max_upload_bytes: int = 200 * 1024 * 1024  # big course packs and image-heavy slide exports
+    user_storage_quota_bytes: int = 1024 * 1024 * 1024
     max_documents_per_collection: int = 200
 
     embedding_model: str = "BAAI/bge-small-en-v1.5"
