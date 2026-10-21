@@ -202,6 +202,8 @@ def main(pdf_path: str) -> int:
     check(
         "deleted owner's collection is gone for classmate", r.status_code == 404, f"{r.status_code}"
     )
+    for throwaway in (bob, stranger):  # leave no test accounts behind
+        throwaway.request("DELETE", "/me", json={"password": PASSWORD})
     return report()
 
 

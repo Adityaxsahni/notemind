@@ -57,6 +57,9 @@ jobs:
           # torch comes from PyTorch's CPU index as 2.x.y+cpu, which PyPI's advisory DB doesn't
           # know. Same source release, so audit it under the upstream version.
           sed -i -E 's/^(torch==[0-9.]+)\+cpu/\1/' requirements.txt
+          # Packages overridden to `sys_platform == 'never'` (pyproject.toml) are never
+          # installed, and uv exports them without hashes, which --disable-pip rejects.
+          sed -i -E "/sys_platform == .never./d" requirements.txt
           uvx pip-audit -r requirements.txt --disable-pip --strict
 
   frontend:
