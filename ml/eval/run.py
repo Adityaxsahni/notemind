@@ -13,6 +13,7 @@
 import argparse
 import json
 import logging
+import math
 import sys
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -22,10 +23,10 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.embeddings import get_embedder
-from app.llm.providers import AnthropicProvider
+from app.llm.providers import LLMProvider, make_provider
 from app.rag.reranker import CrossEncoderReranker, get_reranker
 
-from .answer_eval import PRICES, DryRunLLM, eval_gateway, evaluate_answers
+from .answer_eval import PRICES, DryRunLLM, PacedProvider, Pacer, eval_gateway, evaluate_answers
 from .dataset import describe, load_questions
 from .generate import generate, save_generated
 from .index import ChunkConfig, build_indexes, eval_engine
@@ -128,21 +129,22 @@ def cmd_retrieval(args: argparse.Namespace) -> int:
 
 
 def _estimate_usd(model: str, calls: int, tokens: tuple[int, int]) -> float:
-    input_price, output_price = PRICES[model]
+    """NaN for a model without a list price in PRICES."""
+    input_price, output_price = PRICES.get(model, (float("nan"), float("nan")))
     return calls * (tokens[0] * input_price + tokens[1] * output_price) / 1e6
 
 
-def _provider(model: str, effort: str) -> AnthropicProvider:
-    settings = get_settings()
-    if settings.llm_api_key is None or not settings.llm_api_key.get_secret_value():
-        raise SystemExit("LLM_API_KEY is not set in .env (or use --dry-run)")
-    return AnthropicProvider(
-        api_key=settings.llm_api_key.get_secret_value(),
-        model=model,
-        effort=effort,
-        timeout=settings.llm_timeout_seconds,
-        max_retries=settings.llm_max_retries,
-    )
+def _provider(
+    model: str, effort: str, rpm: float | None = None, pacers: dict[str, Pacer] | None = None
+) -> LLMProvider:
+    try:
+        provider = make_provider(model, effort, get_settings())
+    except ValueError:
+        raise SystemExit("LLM_API_KEY is not set in .env (or use --dry-run)") from None
+    if rpm is None:
+        return provider
+    pacers = {} if pacers is None else pacers
+    return PacedProvider(provider, pacers.setdefault(model, Pacer(rpm)))
 
 
 def cmd_answers(args: argparse.Namespace) -> int:
@@ -154,16 +156,17 @@ def cmd_answers(args: argparse.Namespace) -> int:
         estimate = _estimate_usd(
             args.answer_model, len(questions), TOKENS_PER_ANSWER
         ) + _estimate_usd(args.judge_model, len(questions), TOKENS_PER_JUDGEMENT)
+        cost = "unknown (no list price in PRICES)" if math.isnan(estimate) else f"~${estimate:.2f}"
         print(
             f"{len(questions)} questions: answers by {args.answer_model}, judged by "
-            f"{args.judge_model}. Estimated cost ~${estimate:.2f} "
-            f"(hard cap {args.max_tokens:,} tokens)."
+            f"{args.judge_model}. Estimated cost {cost} (hard cap {args.max_tokens:,} tokens)."
         )
         if not args.yes:
             print("Nothing spent. Re-run with --yes to proceed.")
             return 2
-        answer_llm = _provider(args.answer_model, settings.llm_answer_effort)
-        judge_llm = _provider(args.judge_model, "medium")
+        pacers: dict[str, Pacer] = {}
+        answer_llm = _provider(args.answer_model, settings.llm_answer_effort, args.rpm, pacers)
+        judge_llm = _provider(args.judge_model, "medium", args.rpm, pacers)
 
     with Session(eval_engine()) as session:
         indexes = build_indexes(session, get_embedder(), args.set, _default_chunks())
@@ -191,9 +194,10 @@ def cmd_answers(args: argparse.Namespace) -> int:
         print(f"  {name:24s} {value}")
     if not args.dry_run:
         latest = {}  # newest run per answer model
-        for path in sorted(RESULTS_DIR.glob(f"*-{args.set}-answers-claude-*.json")):
+        for path in sorted(RESULTS_DIR.glob(f"*-{args.set}-answers-*.json")):
             run = json.loads(path.read_text(encoding="utf-8"))
-            latest[run["config"]["answer_model"]] = run
+            if run["config"]["answer_model"] != "dry-run":
+                latest[run["config"]["answer_model"]] = run
         write_section(f"answers-{args.set}", answers_table(list(latest.values())))
     print(f"results: {out}")
     return 0
@@ -281,10 +285,16 @@ def main() -> int:
 
     answers = sub.add_parser("answers", help="end-to-end answer quality with an LLM judge")
     answers.add_argument("--set", default="seed")
-    answers.add_argument("--answer-model", default=get_settings().llm_answer_model, choices=models)
-    answers.add_argument("--judge-model", default="claude-opus-5-5", choices=models)
+    answers.add_argument(
+        "--answer-model", default=get_settings().llm_answer_model, help=f"priced: {models}"
+    )
+    # One LLM_API_KEY means one vendor, so the judge defaults to the answer model.
+    answers.add_argument("--judge-model", help="default: the answer model")
     answers.add_argument("--max-tokens", type=int, default=1_000_000, help="hard cap for the run")
     answers.add_argument("--limit", type=int, help="only the first N questions")
+    answers.add_argument(
+        "--rpm", type=float, help="max requests per minute per model (free API tiers)"
+    )
     answers.add_argument("--dry-run", action="store_true", help="scripted fake LLM: free")
     answers.add_argument("--yes", action="store_true", help="confirm spending")
     answers.set_defaults(func=cmd_answers)
@@ -302,7 +312,7 @@ def main() -> int:
     gen = sub.add_parser("generate", help="draft questions from notes for human review")
     gen.add_argument("--set", required=True)
     gen.add_argument("--course", required=True)
-    gen.add_argument("--model", default=get_settings().llm_answer_model, choices=models)
+    gen.add_argument("--model", default=get_settings().llm_answer_model)
     gen.add_argument("--single", type=int, default=30)
     gen.add_argument("--multi-hop", type=int, default=5)
     gen.add_argument("--unanswerable", type=int, default=10)
@@ -310,6 +320,8 @@ def main() -> int:
     gen.set_defaults(func=cmd_generate)
 
     args = parser.parse_args()
+    if args.command == "answers" and not args.judge_model:
+        args.judge_model = args.answer_model
     return args.func(args)
 
 

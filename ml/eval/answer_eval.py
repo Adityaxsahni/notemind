@@ -3,6 +3,7 @@ then an LLM judge. Costs money: the CLI prints an estimate and needs `--yes`."""
 
 import time
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 import fakeredis
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.embeddings import Embedder
 from app.llm.gateway import BudgetExceeded, LLMGateway
-from app.llm.providers import Completion, LLMProvider, LLMRequest, TextDelta
+from app.llm.providers import Completion, LLMEvent, LLMProvider, LLMRequest, TextDelta
 from app.rag.answer import (
     NOT_FOUND,
     SYSTEM_PROMPT,
@@ -26,7 +27,8 @@ from .index import CourseIndex
 from .judge import judge_request, parse_judgement
 from .metrics import mean, percentile
 
-# USD per million tokens (input, output), Anthropic list prices, Oct 2026.
+# USD per million tokens (input, output), Anthropic list prices, Oct 2026. Models missing here
+# (e.g. Gemini on its free tier) report cost as unknown.
 PRICES = {
     "claude-opus-5-5": (4.00, 20.00),
     "claude-sonnet-5-5": (2.00, 10.00),
@@ -49,6 +51,30 @@ class Call:
 def cost_usd(model: str, completion: Completion) -> float:
     input_price, output_price = PRICES.get(model, (float("nan"), float("nan")))
     return (completion.input_tokens * input_price + completion.output_tokens * output_price) / 1e6
+
+
+class Pacer:
+    """Spaces calls to stay under a requests-per-minute quota, such as a free API tier's.
+    Share one per model: the quota counts the answer and judge calls together."""
+
+    def __init__(self, rpm: float) -> None:
+        self._interval = 60.0 / rpm
+        self._next = 0.0
+
+    def wait(self) -> None:
+        delay = self._next - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+        self._next = time.monotonic() + self._interval
+
+
+class PacedProvider:
+    def __init__(self, provider: LLMProvider, pacer: Pacer) -> None:
+        self._provider, self._pacer = provider, pacer
+
+    def stream(self, request: LLMRequest) -> Iterator[LLMEvent]:
+        self._pacer.wait()
+        yield from self._provider.stream(request)
 
 
 def eval_gateway(provider: LLMProvider, token_cap: int) -> LLMGateway:

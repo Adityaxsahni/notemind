@@ -49,8 +49,8 @@ class Settings(BaseSettings):
     # off-topic ones <= -10.2. Calibrated on the full eval set in Phase 7.
     retrieval_min_score: float = -6.0
 
-    llm_api_key: SecretStr | None = None
-    llm_answer_model: str = "claude-opus-5-5"
+    llm_api_key: SecretStr | None = None  # the key for whichever vendor llm_answer_model is
+    llm_answer_model: str = "claude-opus-5-5"  # or a "gemini-..." model with a Gemini API key
     # Grounded Q&A over six short passages needs little deliberation; low effort also keeps
     # time-to-first-token down (thinking is always on for this model).
     llm_answer_effort: Literal["low", "medium", "high", "xhigh", "max"] = "low"

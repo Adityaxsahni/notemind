@@ -3,7 +3,8 @@ import csv
 import pytest
 
 from app.llm.providers import Completion
-from ml.eval.answer_eval import cost_usd, summarize_answers
+from ml.eval import answer_eval
+from ml.eval.answer_eval import Pacer, cost_usd, summarize_answers
 from ml.eval.dataset import Question
 from ml.eval.judge import parse_judgement
 from ml.eval.labels import agreement, cohen_kappa
@@ -130,3 +131,21 @@ def test_report_sections_preserve_hand_written_text(tmp_path):
     assert "My analysis." in text
     assert "| b |" in text and "| a |" not in text
     assert text.count("BEGIN:t") == 1
+
+
+def test_pacer_spaces_calls_to_the_quota(monkeypatch):
+    clock, slept = [100.0], []
+
+    def sleep(seconds):
+        slept.append(seconds)
+        clock[0] += seconds
+
+    monkeypatch.setattr(answer_eval.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(answer_eval.time, "sleep", sleep)
+    pacer = Pacer(rpm=4)  # one call per 15 s
+    pacer.wait()  # first call goes straight through
+    clock[0] += 5  # the call took 5 s
+    pacer.wait()
+    clock[0] += 20  # slower than the interval: no wait needed
+    pacer.wait()
+    assert slept == [10.0]
