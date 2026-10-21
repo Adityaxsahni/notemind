@@ -32,7 +32,6 @@ def downgrade() -> None:
     op.execute("ALTER TYPE document_kind RENAME TO document_kind_old")
     op.execute("CREATE TYPE document_kind AS ENUM ('pdf', 'docx', 'pptx')")
     op.execute(
-        "ALTER TABLE documents ALTER COLUMN kind TYPE document_kind "
-        "USING kind::text::document_kind"
+        "ALTER TABLE documents ALTER COLUMN kind TYPE document_kind USING kind::text::document_kind"
     )
     op.execute("DROP TYPE document_kind_old")
