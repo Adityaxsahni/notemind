@@ -17,7 +17,7 @@ from sqlalchemy.orm.exc import StaleDataError
 from app.config import get_settings
 from app.db import new_session
 from app.embeddings import Embedder, get_embedder
-from app.ingestion.chunking import ChunkDraft, chunk_pages
+from app.ingestion.chunking import chunk_pages, with_heading
 from app.ingestion.clean import clean_pages
 from app.ingestion.extract import ExtractionError, Page, extract_pages
 from app.ingestion.queue import enqueue_indexing
@@ -103,7 +103,9 @@ def index_document(session: Session, embedder: Embedder, document_id: uuid.UUID)
         batch_size = settings.embedding_batch_size
         for start in range(0, len(drafts), batch_size):
             batch = drafts[start : start + batch_size]
-            vectors.extend(embedder.embed_documents([embedding_input(d) for d in batch]))
+            vectors.extend(
+                embedder.embed_documents([with_heading(d.heading, d.text) for d in batch])
+            )
             done = start + len(batch)
             # Each commit also bumps updated_at, so a long job is never mistaken for stale.
             document.progress = EXTRACTED_PROGRESS + (99 - EXTRACTED_PROGRESS) * done // len(drafts)
@@ -129,11 +131,6 @@ def index_document(session: Session, embedder: Embedder, document_id: uuid.UUID)
         document.error = None
         session.commit()
         logger.info("indexed document_id=%s chunks=%d", document_id, len(drafts))
-
-
-def embedding_input(draft: ChunkDraft) -> str:
-    """The heading gives a chunk its context: "Normalization" + "It removes redundancy..."."""
-    return f"{draft.heading}\n{draft.text}" if draft.heading else draft.text
 
 
 @contextmanager

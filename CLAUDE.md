@@ -15,18 +15,24 @@ questions and get answers with page-level citations, and generate quizzes from t
 - `backend/app/` — API (`api/`), config, db, worker; `backend/tests/`; `backend/alembic/`
 - `backend/app/ingestion/` — upload validation, extraction, cleaning, chunking, RQ jobs.
   Two queues: `ingestion` (parses untrusted files) → `indexing` (chunks + embeds)
+- `backend/app/rag/` — hybrid retriever + reranker, grounded answer pipeline (prompt, citations, cache)
+- `backend/app/llm/` — the LLM gateway (budgets, logging) and providers (only place a vendor SDK is imported)
 - `ml/` — evaluation sets, experiments, reports
-- `frontend/` — web UI
+- `frontend/` — Next.js 16 + Tailwind 4 UI. Read `frontend/AGENTS.md` first: this Next version
+  differs from older docs. Browser calls are same-origin; `next.config.ts` rewrites API paths
+  to the backend (keep page routes off `/auth`, `/me`, `/collections`, `/invites`)
 - `infra/` — deployment config
 - `docs/` — design.md, performance.md, runbook
 
 ## Commands (run from `backend/`)
 - `uv sync` — install deps
-- `uv run pytest` — tests (fake embedder); `uv run pytest -m slow` — real embedding model
+- `uv run pytest` — tests (fake models and LLM); `uv run pytest -m slow` — real local models;
+  `uv run pytest -m llm` — real LLM API (needs `LLM_API_KEY`, costs a few cents)
 - `uv run ruff check . && uv run ruff format .` — lint/format
 - `uv run uvicorn app.main:app --reload` — dev server
 - `uv run alembic revision --autogenerate -m "msg"` / `uv run alembic upgrade head`
-- From repo root: `docker compose up --build` — full stack
+- From repo root: `docker compose up --build` — full stack (UI on http://localhost:3000)
+- From `frontend/`: `npm run dev`, `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`
 
 ## Conventions
 - Type hints everywhere; Pydantic models validate every request body and query param

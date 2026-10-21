@@ -38,3 +38,20 @@ def test_token_count_uses_the_model_tokenizer(embedder):
     assert embedder.count_tokens("Normalization") >= 1
     assert embedder.count_tokens("transitive dependencies") > 2
     assert embedder.count_tokens("") == 0
+
+
+def test_reranker_separates_relevant_from_off_topic_with_default_threshold():
+    from app.config import get_settings
+    from app.rag.reranker import get_reranker
+
+    passages = [
+        "3.1 Normalization\nThird normal form removes transitive dependencies.",
+        "4 Concurrency\nTwo-phase locking can deadlock.",
+    ]
+    reranker = get_reranker()
+    on_topic = reranker.score("what does third normal form eliminate?", passages)
+    off_topic = reranker.score("who won the football world cup", passages)
+
+    threshold = get_settings().retrieval_min_score
+    assert on_topic[0] > threshold > max(off_topic)
+    assert on_topic[0] > on_topic[1]

@@ -129,12 +129,23 @@ links, admin/ops access, third-party LLM API.
 | Chunk boundaries | **Never across pages or headings**; split paragraph → line → sentence, words only for an over-long sentence; overlap by whole sentences | Fixed windows over the whole document | Every citation points at exactly one page; no chunk mixes two topics. Slides give short chunks; Phase 7 measures whether that hurts |
 | Heading context | **Heading carried across pages, prepended to the embedding input, weighted 'A' in the tsvector** | Embed body text only | "It removes redundancy…" alone doesn't say *what* does; the heading supplies that context |
 | Tenant column on chunks | **`user_id` = the collection owner, denormalized** | Join through collections on every query | Lets every search filter `(user_id, collection_id)` in the same SQL statement, backed by one composite index |
+| Reranker | **`ms-marco-MiniLM-L6-v2`** (22M params), top-30 fused candidates → top-6 | `bge-reranker-base` (278M) | Measured on our CPU: 30 candidates in ~1.0 s vs ~7.0 s, which alone would break the 2 s time-to-first-token target. MiniLM also separated on- vs off-topic questions more clearly. bge stays a Phase 7 ablation |
+| Low-confidence cutoff | **Raw reranker logit < −6.0 → "not in your notes", no LLM call** | Cosine-similarity threshold | Cross-encoder scores reflect relevance to the question far better than embedding distance. On a 13-question smoke set, answerable ≥ −3.9 and off-topic ≤ −10.2; recalibrated on the Phase 7 eval set |
+| Keyword query semantics | **OR of the question's words** (`plainto_tsquery` rewritten), ranked by `ts_rank_cd` | `websearch_to_tsquery` (AND) | Questions contain words the notes don't ("what does … eliminate"); AND would return nothing. Ranking still favours chunks matching more words |
+| Filtered vector search | **pgvector iterative HNSW scan** (`relaxed_order`), re-sorted by exact distance | Plain HNSW scan | A plain scan takes the nearest chunks of *all* tenants, then filters, which can return too few rows for one user |
+| Token budgets | **Reserve worst case (estimated input + max_tokens) atomically before the call, settle to billed usage after**; per user and global, per UTC day | Count usage after the call | Counting afterwards lets 10 concurrent requests all pass a nearly-spent budget. Failures before output are free; a stream cut mid-answer keeps the hold (usage unknown) |
+| Prompt structure | **Rules in the system prompt; sources + question in the user turn as `<source id=… document=… page=…>` blocks, HTML-escaped** | Concatenate notes into the system prompt | Document text can never sit in the instruction channel, and escaping means a note containing `</source><system>…` can't close its tag (test-proven) |
+| Citation check | **Streaming filter drops any `[S#]` that doesn't name a provided source**; answers with no valid citation are flagged `grounded: false` | Check after the full answer | Invented citations never reach the screen, even mid-stream |
+| Answer cache | **Redis, keyed on (collection, document count + last change, normalized question)**, 24 h TTL | Semantic cache | Exact repeats ("what is 3NF" before an exam) are common; any upload/delete/re-index changes the key, so stale answers can't be served |
+| Answer model | **`claude-opus-5-5` at low effort, server-side refusal fallback on** (config: `LLM_ANSWER_MODEL`) | Smaller/cheaper model | Anthropic's recommended default. ~$0.02 per answered question at typical sizes, above the ₹15/user/month target for heavy users; Phase 7 measures whether a cheaper model holds answer quality |
+| Frontend ↔ API | **Same origin: Next.js rewrites API paths to FastAPI**; answers stream over `fetch` (POST + SSE) | Browser calls the API origin directly with CORS | Auth cookies stay first-party (`SameSite=Strict`, refresh cookie scoped to `/auth`), works in every browser over plain-http localhost, and matches a single-domain production deploy. Proxy body limit raised to 21 MB so the backend enforces the 20 MB upload limit |
+| Rendering model output | **React text nodes + citation chips only; no Markdown/HTML rendering**; static CSP on pages | Markdown renderer | An uploaded document could steer the model into emitting markup; with no HTML path there is nothing to sanitize. Nonce-based CSP is a later hardening step (needs `proxy.ts`) |
 | Model supply chain | **Exact Hub commit pinned, weights baked into the image, `HF_HUB_OFFLINE=1` at runtime**, CPU-only torch wheels | Download `main` on first use | A re-pushed model can't change behaviour silently; containers need no internet; image avoids ~2 GB of unused CUDA libraries |
 
 ## 8. Open questions
 - Which LLM provider/plan guarantees no training on API data at our budget?
 - Is OCR quality (tesseract) good enough for handwritten notes, or defer to a vision model?
-- Reranker hosting: load it in the API process (simplest), or a small internal service shared
-  by API replicas? (Embeddings are settled: the indexing worker, see §7.)
-- HNSW + tenant filter: with many tenants, check recall and enable pgvector's
-  `hnsw.iterative_scan` so filtered searches still return k results (Phase 6/7).
+- Query-time models: the API process loads the embedder + reranker at startup (~1 GB RAM per
+  process). With several API replicas, move them to one shared internal inference service.
+- HNSW + tenant filter: iterative scans are on; measure recall against exact search once
+  there are many tenants (Phase 7).

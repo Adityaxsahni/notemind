@@ -1,10 +1,16 @@
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import auth, collections, documents, health, invites, me
+from app.api import ask, auth, collections, documents, health, invites, me, search
 from app.config import get_settings
+from app.embeddings import get_embedder
+from app.rag.reranker import get_reranker
 
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -14,8 +20,21 @@ SECURITY_HEADERS = {
 }
 
 
+def _load_models() -> None:
+    get_embedder()
+    get_reranker()
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # Load models before serving, not during the first user's question (~10 s).
+        if settings.environment != "test":
+            await asyncio.to_thread(_load_models)
+        yield
+
     # Interactive docs are handy locally but expose the API surface in production.
     docs_enabled = not settings.is_production
     app = FastAPI(
@@ -23,6 +42,7 @@ def create_app() -> FastAPI:
         docs_url="/docs" if docs_enabled else None,
         redoc_url=None,
         openapi_url="/openapi.json" if docs_enabled else None,
+        lifespan=lifespan,
     )
 
     app.add_middleware(
@@ -48,7 +68,7 @@ def create_app() -> FastAPI:
         errors = [{"loc": e["loc"], "msg": e["msg"], "type": e["type"]} for e in exc.errors()]
         return JSONResponse(status_code=422, content={"detail": errors})
 
-    for module in (health, auth, me, collections, documents, invites):
+    for module in (health, auth, me, collections, documents, invites, search, ask):
         app.include_router(module.router)
     return app
 

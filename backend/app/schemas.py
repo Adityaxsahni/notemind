@@ -95,3 +95,33 @@ class DocumentOut(BaseModel):
 
 class InviteAcceptIn(BaseModel):
     token: str = Field(min_length=1, max_length=128)
+
+
+Question = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+
+
+class SearchIn(BaseModel):
+    query: Question
+
+
+class SearchHit(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    chunk_id: uuid.UUID
+    document_id: uuid.UUID
+    document_title: str
+    page: int
+    heading: str | None
+    text: str
+    score: float
+
+
+class SearchOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    low_confidence: bool
+    chunks: list[SearchHit]
+
+
+class AskIn(BaseModel):
+    question: Question

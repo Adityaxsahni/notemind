@@ -37,6 +37,31 @@ class Settings(BaseSettings):
     chunk_target_tokens: int = 400
     chunk_overlap_tokens: int = 60
 
+    # MiniLM-L6 reranks 30 candidates in ~1 s on CPU; bge-reranker-base took ~7 s (Phase 7
+    # compares their quality).
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L6-v2"
+    reranker_model_revision: str = (
+        "233902d25c440f23af6f7d6e94d2946bac0bee0a"  # pragma: allowlist secret
+    )
+    retrieval_candidates: int = 30  # per search method, and how many fused results get reranked
+    retrieval_top_k: int = 6
+    # Raw reranker logit. On a 13-question smoke set, answerable questions scored >= -3.9 and
+    # off-topic ones <= -10.2. Calibrated on the full eval set in Phase 7.
+    retrieval_min_score: float = -6.0
+
+    llm_api_key: SecretStr | None = None
+    llm_answer_model: str = "claude-opus-5-5"
+    # Grounded Q&A over six short passages needs little deliberation; low effort also keeps
+    # time-to-first-token down (thinking is always on for this model).
+    llm_answer_effort: Literal["low", "medium", "high", "xhigh", "max"] = "low"
+    llm_answer_max_tokens: int = 8000  # includes thinking; also the per-request budget hold
+    llm_timeout_seconds: float = 60.0
+    llm_max_retries: int = 2  # SDK retries 408/409/429/5xx/connection errors with backoff
+    # Input + output tokens. A typical answer uses ~3-4k, so ~15-20 questions a day.
+    llm_user_daily_token_budget: int = 60_000
+    llm_global_daily_token_budget: int = 5_000_000  # caps total spend if many users pile on
+    answer_cache_ttl_seconds: int = 24 * 3600
+
     @model_validator(mode="after")
     def _check_chunking(self) -> "Settings":
         if not 50 <= self.chunk_target_tokens <= 480:

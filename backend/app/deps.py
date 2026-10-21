@@ -4,8 +4,13 @@ from fastapi import Cookie, Depends, HTTPException, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.db import get_session
+from app.embeddings import Embedder, get_embedder
+from app.llm.gateway import LLMGateway
+from app.llm.providers import LLMProvider, get_llm_provider
 from app.models import User
+from app.rag.reranker import Reranker, get_reranker
 from app.redis_client import get_redis
 from app.security.tokens import decode_access_token
 
@@ -29,3 +34,23 @@ def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+# Models load once per process; tests override these with fakes.
+EmbedderDep = Annotated[Embedder, Depends(get_embedder)]
+RerankerDep = Annotated[Reranker, Depends(get_reranker)]
+
+
+def get_llm_gateway(
+    redis: RedisDep, provider: Annotated[LLMProvider | None, Depends(get_llm_provider)]
+) -> LLMGateway:
+    settings = get_settings()
+    return LLMGateway(
+        provider,
+        redis,
+        user_daily_budget=settings.llm_user_daily_token_budget,
+        global_daily_budget=settings.llm_global_daily_token_budget,
+    )
+
+
+LLMGatewayDep = Annotated[LLMGateway, Depends(get_llm_gateway)]

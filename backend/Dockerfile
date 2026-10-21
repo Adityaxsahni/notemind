@@ -9,8 +9,8 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
-# Bake the pinned embedding model into the image: containers never download code or weights.
-RUN .venv/bin/python -c "from app.embeddings import get_embedder; get_embedder()"
+# Bake the pinned models into the image: containers never download code or weights.
+RUN .venv/bin/python -c "from app.main import _load_models; _load_models()"
 
 # --- runtime stage: no build tools, non-root user ---
 FROM python:3.12-slim

@@ -1,5 +1,6 @@
 import pytest
 from sqlalchemy import select
+from starlette.requests import ClientDisconnect, Request
 
 from app.config import get_settings
 from app.models import Document, DocumentPage
@@ -127,6 +128,21 @@ def test_rejects_oversized_file_while_streaming(alice, cid, storage, monkeypatch
     assert response.status_code == 413
     assert _files_on_disk(storage) == []
     assert list((storage.root / ".tmp").iterdir()) == []  # temp file cleaned up
+
+
+def test_interrupted_upload_is_a_clean_400(alice, cid, storage, monkeypatch, caplog):
+    async def disconnect_midway(self):
+        yield b"%PDF-1.7 first chunk"
+        raise ClientDisconnect
+
+    monkeypatch.setattr(Request, "stream", disconnect_midway)
+    response = upload(alice, cid, b"%PDF-1.7 whatever")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "The upload was interrupted"
+    assert _files_on_disk(storage) == []
+    assert list((storage.root / ".tmp").iterdir()) == []
+    assert "Traceback" not in caplog.text
+    assert alice.get(f"/collections/{cid}/documents").json() == []
 
 
 def test_enforces_storage_quota(alice, cid, monkeypatch):

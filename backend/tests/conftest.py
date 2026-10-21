@@ -12,12 +12,15 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from app import models  # noqa: E402, F401
 from app.config import get_settings  # noqa: E402
 from app.db import Base, get_session  # noqa: E402
+from app.embeddings import get_embedder  # noqa: E402
 from app.ingestion.queue import get_enqueue  # noqa: E402
 from app.ingestion.tasks import index_document, ingest_document  # noqa: E402
+from app.llm.providers import get_llm_provider  # noqa: E402
 from app.main import app  # noqa: E402
+from app.rag.reranker import get_reranker  # noqa: E402
 from app.redis_client import get_redis  # noqa: E402
 from app.storage import LocalStorage, get_storage  # noqa: E402
-from tests.fakes import FakeEmbedder  # noqa: E402
+from tests.fakes import FakeEmbedder, FakeLLM, FakeReranker  # noqa: E402
 
 GOOD_PASSWORD = "correct-horse-battery-42"  # pragma: allowlist secret
 
@@ -71,9 +74,23 @@ def embedder():
 
 
 @pytest.fixture
-def make_client(db, storage, embedder):
+def reranker():
+    return FakeReranker()
+
+
+@pytest.fixture
+def llm():
+    return FakeLLM()
+
+
+@pytest.fixture
+def redis():
+    return fakeredis.FakeRedis()
+
+
+@pytest.fixture
+def make_client(db, storage, embedder, reranker, llm, redis):
     """Returns a factory: each call is a separate browser with its own cookie jar."""
-    redis = fakeredis.FakeRedis()
 
     def _session():
         session = db()
@@ -95,6 +112,9 @@ def make_client(db, storage, embedder):
     app.dependency_overrides[get_redis] = lambda: redis
     app.dependency_overrides[get_storage] = lambda: storage
     app.dependency_overrides[get_enqueue] = lambda: _enqueue_inline
+    app.dependency_overrides[get_embedder] = lambda: embedder
+    app.dependency_overrides[get_reranker] = lambda: reranker
+    app.dependency_overrides[get_llm_provider] = lambda: llm
     clients = []
 
     def _make():

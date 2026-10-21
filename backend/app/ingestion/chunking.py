@@ -58,6 +58,11 @@ def chunk_pages(
     return chunks
 
 
+def with_heading(heading: str | None, text: str) -> str:
+    """What models see for a chunk: the heading gives "It removes redundancy..." its subject."""
+    return f"{heading}\n{text}" if heading else text
+
+
 def is_heading(line: str, *, title_position: bool = False) -> bool:
     line = line.strip()
     if not line or len(line) > MAX_HEADING_CHARS or line[-1] in ".,;:?!":

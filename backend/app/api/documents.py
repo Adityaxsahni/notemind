@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from starlette.requests import ClientDisconnect
 
 from app.authz import Action, assert_can_access
 from app.config import get_settings
@@ -91,12 +92,19 @@ async def upload_document(
     try:
         size, digest = 0, hashlib.sha256()
         with temp_path.open("wb") as out:
-            async for chunk in request.stream():
-                size += len(chunk)
-                if size > settings.max_upload_bytes:
-                    raise _too_large(settings.max_upload_bytes)
-                digest.update(chunk)
-                out.write(chunk)
+            try:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > settings.max_upload_bytes:
+                        raise _too_large(settings.max_upload_bytes)
+                    digest.update(chunk)
+                    out.write(chunk)
+            except ClientDisconnect:
+                # Browser tab closed or a proxy dropped the connection: an expected event,
+                # not a server error. The partial file is removed in `finally` below.
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="The upload was interrupted"
+                ) from None
         if size == 0:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The file is empty")
         if used + size > settings.user_storage_quota_bytes:
