@@ -125,3 +125,39 @@ class SearchOut(BaseModel):
 
 class AskIn(BaseModel):
     question: Question
+
+
+Topic = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+
+
+class QuizIn(BaseModel):
+    topic: Topic | None = None  # None: questions from across the whole collection
+    num_questions: int = Field(default=5, ge=1, le=10)
+
+
+class CitationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    chunk_id: uuid.UUID
+    document_id: uuid.UUID
+    document_title: str
+    page: int
+    heading: str | None
+
+
+class QuizQuestionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    question: str
+    options: list[str]
+    answer: int
+    explanation: str
+    citation: CitationOut
+
+
+class QuizOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    questions: list[QuizQuestionOut]
+    found: bool

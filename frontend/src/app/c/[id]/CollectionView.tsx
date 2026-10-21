@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { AskPanel } from "@/components/AskPanel";
 import { DocumentsPanel } from "@/components/DocumentsPanel";
+import { QuizPanel } from "@/components/QuizPanel";
 import { SharePanel } from "@/components/SharePanel";
 import { Alert, Button, Spinner } from "@/components/ui";
 import { ApiError, deleteCollection, getCollection, listDocuments } from "@/lib/api";
@@ -89,7 +90,10 @@ export function CollectionView() {
       </div>
       {error && <Alert>{error}</Alert>}
       <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
-        <AskPanel collectionId={collection.id} hasReadyDocuments={hasReadyDocuments} />
+        <div className="space-y-6">
+          <AskPanel collectionId={collection.id} hasReadyDocuments={hasReadyDocuments} />
+          <QuizPanel collectionId={collection.id} hasReadyDocuments={hasReadyDocuments} />
+        </div>
         <div className="space-y-6">
           <DocumentsPanel
             collectionId={collection.id}

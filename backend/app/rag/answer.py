@@ -170,7 +170,7 @@ def _generate(
         yield AnswerError(DECLINED)
         return
 
-    citations = [_citation(source_id, sources[source_id]) for source_id in citation_filter.cited]
+    citations = [citation_for(source_id, sources[source_id]) for source_id in citation_filter.cited]
     done = AnswerDone(
         answer="".join(parts).strip(),
         citations=citations,
@@ -238,7 +238,7 @@ class CitationFilter:
         return "".join(f"[{source_id}]" for source_id in kept)
 
 
-def _citation(source_id: str, chunk: RetrievedChunk) -> Citation:
+def citation_for(source_id: str, chunk: RetrievedChunk) -> Citation:
     return Citation(
         id=source_id,
         chunk_id=chunk.chunk_id,

@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import ask, auth, collections, documents, health, invites, me, search
+from app.api import ask, auth, collections, documents, health, invites, me, quiz, search
 from app.config import get_settings
 from app.embeddings import get_embedder
 from app.rag.reranker import get_reranker
@@ -68,7 +68,7 @@ def create_app() -> FastAPI:
         errors = [{"loc": e["loc"], "msg": e["msg"], "type": e["type"]} for e in exc.errors()]
         return JSONResponse(status_code=422, content={"detail": errors})
 
-    for module in (health, auth, me, collections, documents, invites, search, ask):
+    for module in (health, auth, me, collections, documents, invites, search, ask, quiz):
         app.include_router(module.router)
     return app
 

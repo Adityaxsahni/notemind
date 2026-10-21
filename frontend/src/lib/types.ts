@@ -56,3 +56,16 @@ export type AskEvent =
   | { type: "token"; text: string }
   | { type: "done"; data: AnswerDone }
   | { type: "error"; message: string };
+
+export interface QuizQuestion {
+  question: string;
+  options: string[];
+  answer: number; // index into options
+  explanation: string;
+  citation: Citation;
+}
+
+export interface Quiz {
+  questions: QuizQuestion[];
+  found: boolean; // false when the notes don't cover the requested topic
+}

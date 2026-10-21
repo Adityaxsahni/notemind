@@ -1,5 +1,5 @@
 import { SSEParser } from "./sse";
-import type { AskEvent, Collection, InviteCreated, NoteDocument, User } from "./types";
+import type { AskEvent, Collection, InviteCreated, NoteDocument, Quiz, User } from "./types";
 
 /** Paths are same-origin; next.config.ts forwards them to the FastAPI backend. */
 
@@ -142,3 +142,11 @@ export async function ask(
     for (const event of parser.push(value)) onEvent(event);
   }
 }
+
+// --- quizzes -------------------------------------------------------------------------------
+
+export const createQuiz = (collectionId: string, numQuestions: number, topic?: string) =>
+  json<Quiz>(
+    `/collections/${collectionId}/quiz`,
+    sendJson("POST", { num_questions: numQuestions, topic: topic || null }),
+  );

@@ -4,13 +4,39 @@ Ask questions about your own college notes and get answers with page-level citat
 plus auto-generated quizzes. A RAG system built with FastAPI, PostgreSQL + pgvector, Redis
 and a Next.js frontend.
 
-> Work in progress. See [CLAUDE.md](CLAUDE.md) for architecture and security rules, and
-> [docs/design.md](docs/design.md) for the design and threat model.
+## Features
+
+- **Upload notes** (PDF, PPTX with speaker notes, DOCX) into a collection per course;
+  extraction runs in a memory-capped background worker with live progress.
+- **Ask questions** and get answers streamed token by token, citing the page each statement
+  came from. When the notes don't cover a question, NoteMind says so instead of guessing.
+- **Quiz yourself**: multiple-choice questions written from your notes, on a topic or across
+  the whole course, each linked to its source page.
+- **Share a course** read-only with classmates through a revocable invite link.
+- **Own your data**: export everything as JSON, or delete your account and all files.
+
+## How it works
+
+Hybrid retrieval (pgvector HNSW + Postgres full-text, fused with RRF) → cross-encoder rerank
+→ top 6 passages → LLM with a grounded prompt → citation check. Low reranker confidence
+skips the LLM entirely ("not in your notes"). The LLM can be Anthropic Claude or Google
+Gemini (`LLM_ANSWER_MODEL`), behind one gateway that enforces per-user and global daily
+token budgets.
+
+The retrieval choices are measured, not assumed: [ml/eval/REPORT.md](ml/eval/REPORT.md) has
+Recall@k / MRR / nDCG and refusal rates across 15 configurations (chunk size, overlap,
+vector vs hybrid, reranker, pool size), and CI fails if retrieval quality regresses.
+
+Security is designed in: tenant isolation enforced in every SQL query, prompt-injection
+defences, httpOnly cookie auth with refresh-token rotation, upload validation, rate limits,
+and a STRIDE threat model. See [docs/design.md](docs/design.md) and [CLAUDE.md](CLAUDE.md).
 
 ## Run locally
 
 Requires Docker Desktop. Copy the env file and fill in `SECRET_KEY` and `POSTGRES_PASSWORD`
-(and `LLM_API_KEY` to enable answers; without it, search and "not in your notes" still work):
+(and `LLM_API_KEY` to enable answers and quizzes; without it, search and "not in your notes"
+still work). `LLM_API_KEY` is an Anthropic key for `claude-*` models or a Google Gemini key
+for `gemini-*` models (set `LLM_ANSWER_MODEL=gemini-3.8-flash`, for example):
 
 ```bash
 cp .env.example .env
