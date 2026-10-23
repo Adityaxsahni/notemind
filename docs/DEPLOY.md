@@ -21,6 +21,13 @@ Quick tunnels don't reconnect after the machine sleeps or the network drops (clo
 `powershell -ExecutionPolicy Bypass -File scripts\public-link.ps1` to start a fresh tunnel
 and print the new link.
 
+## Free, permanent address: Vercel website + backend on this machine
+
+`powershell -ExecutionPolicy Bypass -File scripts\go-live.ps1` starts Docker and the app,
+opens the tunnel, points the Vercel project at it (`BACKEND_URL`, `PROXY_SECRET`) and
+redeploys. Visitors always use https://notemind-tau-two.vercel.app; run the script again after
+a restart or sleep. The site works while this machine is on.
+
 ## Hosted
 
 **Choice: Vercel for the website, a Docker host for the backend.**
